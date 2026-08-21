@@ -1088,7 +1088,10 @@ function openLine() {
     });
     msg += '──────────────\n';
     msg += '共 ' + items.length + ' 項\n';
-    if (orderId) msg += '訂單編號：' + orderId + '\n';
+    if (orderId) {
+      const editUrl = window.location.origin + window.location.pathname + '?edit=' + orderId;
+      msg += '📝 點此修改訂單：\n' + editUrl + '\n';
+    }
     // ★ 用 location.href 跳轉（手機不會白畫面，LINE app 接管後按返回可回頁面）
     window.location.href = 'https://line.me/R/share?text=' + encodeURIComponent(msg);
     setTimeout(releaseLock, 3000);
