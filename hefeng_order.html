@@ -571,7 +571,7 @@ function checkOnPageOpen() {
         showV2ClickableBanner('您今天已經下過訂單了，點這裡查看／修改', () => {
           askContinueOrNew(data.orderId, data.items, customer, delivery, null, data.history);
         });
-      } else if (!data.windowOpen) {
+      } else if (data.windowOpen === false) {
         lockSendButtonsForExistingOrder();
         showV2Banner('locked', '⏰ 今日下單時間已截止，請明天再回來下單，謝謝！');
       }
