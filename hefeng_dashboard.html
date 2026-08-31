@@ -52,6 +52,25 @@
   .stats-table td:last-child { text-align:right; font-weight:700; color:#1e40af; }
   .stats-table tr:last-child td { border-bottom:none; }
   .stats-table tr:hover td { background:#f5f9ff; }
+  /* 列印 modal */
+  .print-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:300; align-items:center; justify-content:center; }
+  .print-overlay.open { display:flex; }
+  .print-box { background:white; border-radius:16px; width:96%; max-width:540px; max-height:90vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
+  .print-header { background:#1e40af; color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; }
+  .print-header h2 { margin:0; font-size:16px; }
+  .print-close { background:none; border:none; color:white; font-size:22px; cursor:pointer; padding:0 4px; }
+  .print-body { overflow-y:auto; padding:16px; }
+  .print-info { background:#f0f7ff; border-radius:8px; padding:10px 14px; margin-bottom:12px; font-size:14px; }
+  .print-table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:12px; }
+  .print-table th { background:#1e40af; color:white; padding:7px 8px; text-align:center; font-size:12px; }
+  .print-table td { padding:7px 8px; border-bottom:1px solid #e8f0fe; text-align:center; }
+  .print-table td:first-child { text-align:left; }
+  .print-table input[type=number] { width:70px; border:1.5px solid #bfdbfe; border-radius:6px; padding:4px 6px; font-size:13px; text-align:right; }
+  .print-total { text-align:right; font-size:16px; font-weight:700; color:#1e40af; padding:8px 4px; border-top:2px solid #1e40af; margin-top:4px; }
+  .print-send { display:block; width:100%; margin-top:12px; padding:12px; background:#1e40af; color:white; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; }
+  .print-send:active { background:#1532a0; }
+  .bridge-url-row { display:flex; gap:6px; margin-bottom:10px; align-items:center; font-size:12px; color:#555; }
+  .bridge-url-row input { flex:1; border:1.5px solid #ddd; border-radius:6px; padding:5px 8px; font-size:12px; }
 </style>
 </head>
 <body>
@@ -67,6 +86,29 @@
       <button class="stats-close" onclick="closeStats()">×</button>
     </div>
     <div class="stats-body" id="statsBody"></div>
+  </div>
+</div>
+
+<!-- 列印 Modal -->
+<div class="print-overlay" id="printOverlay" onclick="if(event.target===this)closePrint()">
+  <div class="print-box">
+    <div class="print-header">
+      <h2>🖨️ 列印送貨單</h2>
+      <button class="print-close" onclick="closePrint()">×</button>
+    </div>
+    <div class="print-body">
+      <div class="bridge-url-row">
+        <span>橋接器：</span>
+        <input type="text" id="bridgeUrl" value="http://192.168.1.105:8080/print" />
+      </div>
+      <div class="print-info" id="printInfo"></div>
+      <table class="print-table">
+        <thead><tr><th>品項</th><th>數量</th><th>單位</th><th>單價</th><th>小計</th></tr></thead>
+        <tbody id="printItems"></tbody>
+      </table>
+      <div class="print-total" id="printTotal">總計：$0</div>
+      <button class="print-send" onclick="sendPrint()">📤 送出列印</button>
+    </div>
   </div>
 </div>
 
@@ -173,6 +215,7 @@ function renderOrders(orders, date) {
         o.items.map(it => '<div>• ' + escapeHtml(it.name) + '　' + it.qty + (it.unit||'') + (it.note ? '（'+escapeHtml(it.note)+'）' : '') + '</div>').join('') +
         (o.logs && o.logs.length ? '<div style="margin-top:8px;border-top:1px dashed #e0e0e0;padding-top:6px;">' +
           o.logs.map(l => '<div class="log-line">' + l.time + '　' + l.detail + '</div>').join('') + '</div>' : '') +
+        '<button class="delete-btn" style="background:#f0fdf4;color:#166534;border-color:#86efac;margin-top:6px;" onclick="event.stopPropagation();showPrint(' + idx + ')">🖨️ 列印送貨單</button>' +
         '<button class="delete-btn" onclick="event.stopPropagation();deleteOrder(\'' + o.orderId + '\',\'' + escapeHtml(o.customer).replace(/'/g,"\\'") + '\')">🗑️ 刪除這筆訂單（測試用，正式資料請用「取消」）</button>' +
       '</div>' +
     '</div>';
@@ -254,6 +297,107 @@ function escapeHtml(s) {
 }
 
 let currentOrders = [];
+let printOrderIdx = -1;
+
+// 記住每個品項的上次單價 (localStorage)
+function getSavedPrice(name) {
+  try { return localStorage.getItem('price_' + name) || ''; } catch(e) { return ''; }
+}
+function savePrice(name, val) {
+  try { localStorage.setItem('price_' + name, val); } catch(e) {}
+}
+
+function showPrint(idx) {
+  printOrderIdx = idx;
+  const o = currentOrders[idx];
+  document.getElementById('printInfo').innerHTML =
+    '<strong>客戶：</strong>' + escapeHtml(o.customer) +
+    '　<strong>送貨日期：</strong>' + escapeHtml(o.deliveryDate || '') +
+    (o.notes ? '<br><strong>備註：</strong>' + escapeHtml(o.notes) : '');
+  let rows = '';
+  (o.items || []).forEach((it, i) => {
+    const saved = getSavedPrice(it.name || '');
+    rows += '<tr>' +
+      '<td>' + escapeHtml(it.name||'') + '</td>' +
+      '<td>' + (it.qty||0) + '</td>' +
+      '<td>' + escapeHtml(it.unit||'') + '</td>' +
+      '<td><input type="number" min="0" step="0.01" value="' + saved + '" id="price_' + i + '" oninput="calcPrintTotal()" /></td>' +
+      '<td id="sub_' + i + '">—</td>' +
+    '</tr>';
+  });
+  document.getElementById('printItems').innerHTML = rows;
+  calcPrintTotal();
+  document.getElementById('printOverlay').classList.add('open');
+}
+
+function calcPrintTotal() {
+  const o = currentOrders[printOrderIdx];
+  let total = 0;
+  (o.items || []).forEach((it, i) => {
+    const price = parseFloat(document.getElementById('price_' + i).value) || 0;
+    const qty = Number(it.qty) || 0;
+    const sub = price * qty;
+    total += sub;
+    document.getElementById('sub_' + i).textContent = price ? '$' + sub : '—';
+  });
+  document.getElementById('printTotal').textContent = '總計：$' + total;
+}
+
+function closePrint() {
+  document.getElementById('printOverlay').classList.remove('open');
+}
+
+function sendPrint() {
+  const o = currentOrders[printOrderIdx];
+  const bridgeUrl = document.getElementById('bridgeUrl').value.trim();
+
+  // ESC/POS 編碼
+  const ESC = '\x1b', GS = '\x1d', LF = '\n';
+  let r = '';
+  r += ESC + '@';            // 初始化
+  r += ESC + 'a\x01';       // 置中
+  r += ESC + 'E\x01';       // 粗體
+  r += '合豐行' + LF;
+  r += ESC + 'E\x00';
+  r += '送貨日期：' + (o.deliveryDate || '') + LF;
+  r += '客戶：' + (o.customer || '') + LF;
+  r += ESC + 'a\x00';       // 靠左
+  r += '--------------------------------' + LF;
+
+  let total = 0;
+  (o.items || []).forEach((it, i) => {
+    const priceEl = document.getElementById('price_' + i);
+    const price = parseFloat(priceEl ? priceEl.value : 0) || 0;
+    const qty = Number(it.qty) || 0;
+    const sub = price * qty;
+    total += sub;
+    savePrice(it.name || '', String(price));
+    r += (it.name||'') + '　' + qty + (it.unit||'') + LF;
+    r += '  單價：$' + price + '　小計：$' + sub + LF;
+  });
+
+  r += '--------------------------------' + LF;
+  r += ESC + 'E\x01';
+  r += '總計：$' + total + LF;
+  r += ESC + 'E\x00';
+  if (o.notes) r += '備註：' + o.notes + LF;
+  r += LF + LF + LF;
+  r += GS + 'V\x42\x00';   // 切紙
+
+  // 轉成 Uint8Array (UTF-8)
+  const bytes = new TextEncoder().encode(r);
+
+  fetch(bridgeUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: bytes
+  })
+  .then(res => {
+    if (res.ok) { alert('✅ 已送出列印！'); closePrint(); }
+    else res.text().then(t => alert('列印失敗：' + t));
+  })
+  .catch(err => alert('連線失敗，請確認 Galaxy-S10 橋接器已啟動。\n\n' + err));
+}
 
 function showStats() {
   const activeOrders = currentOrders.filter(o => o.status !== 'cancelled');
