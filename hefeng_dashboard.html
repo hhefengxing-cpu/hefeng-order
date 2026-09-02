@@ -85,6 +85,54 @@
   .pwd-body input:focus { outline:none; border-color:#1e40af; }
   .pwd-submit { display:block; width:100%; margin-top:18px; padding:12px; background:#1e40af; color:white; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; }
   .pwd-msg { margin-top:10px; font-size:13px; text-align:center; }
+  /* 刪除當天 modal */
+  .delday-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:400; align-items:center; justify-content:center; }
+  .delday-overlay.open { display:flex; }
+  .delday-box { background:white; border-radius:16px; width:90%; max-width:360px; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
+  .delday-header { background:#c0392b; color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; }
+  .delday-header h2 { margin:0; font-size:16px; }
+  .delday-close { background:none; border:none; color:white; font-size:22px; cursor:pointer; padding:0 4px; }
+  .delday-body { padding:20px; }
+  .delday-body .warning { background:#fff5f5; border:1.5px solid #fca5a5; border-radius:8px; padding:10px 14px; font-size:13px; color:#7f1d1d; margin-bottom:16px; line-height:1.6; }
+  .delday-body label { display:block; font-size:13px; color:#555; margin-bottom:4px; }
+  .delday-body input { width:100%; box-sizing:border-box; border:1.5px solid #fca5a5; border-radius:8px; padding:10px; font-size:15px; }
+  .delday-body input:focus { outline:none; border-color:#c0392b; }
+  .delday-submit { display:block; width:100%; margin-top:16px; padding:12px; background:#c0392b; color:white; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; }
+  .delday-msg { margin-top:10px; font-size:13px; text-align:center; }
+  /* 訂單總覽 modal */
+  .overview-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:400; align-items:center; justify-content:center; }
+  .overview-overlay.open { display:flex; }
+  .overview-box { background:white; border-radius:16px; width:92%; max-width:480px; max-height:85vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
+  .overview-header { background:#1e40af; color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+  .overview-header h2 { margin:0; font-size:16px; }
+  .overview-close { background:none; border:none; color:white; font-size:22px; cursor:pointer; padding:0 4px; }
+  .overview-body { overflow-y:auto; padding:16px; }
+  .overview-table { width:100%; border-collapse:collapse; font-size:14px; }
+  .overview-table th { background:#dbeafe; color:#1e40af; padding:9px 12px; text-align:center; font-size:13px; position:sticky; top:0; }
+  .overview-table th:first-child { text-align:left; }
+  .overview-table td { padding:9px 12px; border-bottom:1px solid #f0f4ff; text-align:center; }
+  .overview-table td:first-child { text-align:left; font-weight:600; }
+  .overview-table tr:last-child td { border-bottom:none; font-weight:700; background:#f0f7ff; }
+  .overview-table tr:hover:not(:last-child) td { background:#f5f9ff; cursor:pointer; }
+  .overview-table .tag-active { color:#1e40af; font-weight:700; }
+  .overview-table .tag-cancelled { color:#c0392b; }
+  .overview-loading { text-align:center; padding:30px; color:#888; font-size:14px; }
+  /* 批價 modal */
+  .price-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:500; align-items:center; justify-content:center; }
+  .price-overlay.open { display:flex; }
+  .price-box { background:white; border-radius:16px; width:92%; max-width:420px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.22); }
+  .price-header { background:#0d6efd; color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+  .price-header h2 { margin:0; font-size:16px; }
+  .price-close { background:none; border:none; color:white; font-size:22px; cursor:pointer; padding:0 4px; }
+  .price-body { overflow-y:auto; padding:16px; }
+  .price-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #f0f0f0; }
+  .price-row:last-child { border-bottom:none; }
+  .price-name { flex:1; font-size:14px; font-weight:600; }
+  .price-qty { font-size:13px; color:#888; white-space:nowrap; }
+  .price-input { width:90px; border:1.5px solid #bfdbfe; border-radius:8px; padding:8px 10px; font-size:15px; text-align:right; }
+  .price-input:focus { outline:none; border-color:#0d6efd; }
+  .price-confirm { display:block; width:100%; margin-top:16px; padding:12px; background:#0d6efd; color:white; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; flex-shrink:0; }
+  .price-info { background:#f0f7ff; border-radius:8px; padding:8px 12px; font-size:13px; color:#1e40af; margin-bottom:12px; }
 </style>
 </head>
 <body>
@@ -100,6 +148,53 @@
       <button class="stats-close" onclick="closeStats()">×</button>
     </div>
     <div class="stats-body" id="statsBody"></div>
+  </div>
+</div>
+
+<!-- 批價 Modal -->
+<div class="price-overlay" id="priceOverlay" onclick="if(event.target===this)closeBatchPrice()">
+  <div class="price-box">
+    <div class="price-header">
+      <h2>💰 批價</h2>
+      <button class="price-close" onclick="closeBatchPrice()">×</button>
+    </div>
+    <div class="price-body">
+      <div class="price-info" id="priceInfo"></div>
+      <div id="priceRows"></div>
+      <button class="price-confirm" onclick="applyBatchPrice()">✅ 確認，帶入列印單</button>
+    </div>
+  </div>
+</div>
+
+<!-- 訂單總覽 Modal -->
+<div class="overview-overlay" id="overviewOverlay" onclick="if(event.target===this)closeOverview()">
+  <div class="overview-box">
+    <div class="overview-header">
+      <h2>📅 各日訂單總覽</h2>
+      <button class="overview-close" onclick="closeOverview()">×</button>
+    </div>
+    <div class="overview-body" id="overviewBody">
+      <div class="overview-loading">載入中…</div>
+    </div>
+  </div>
+</div>
+
+<!-- 刪除當天全部 Modal -->
+<div class="delday-overlay" id="deldayOverlay" onclick="if(event.target===this)closeDeleteDay()">
+  <div class="delday-box">
+    <div class="delday-header">
+      <h2>🗑️ 刪除當天全部訂單</h2>
+      <button class="delday-close" onclick="closeDeleteDay()">×</button>
+    </div>
+    <div class="delday-body">
+      <label style="margin-bottom:4px;">選擇要刪除的日期</label>
+      <input type="date" id="deldayDate" style="width:100%;box-sizing:border-box;border:1.5px solid #fca5a5;border-radius:8px;padding:10px;font-size:15px;margin-bottom:14px;" oninput="updateDeldayWarning()" />
+      <div class="warning" id="deldayWarning"></div>
+      <label>輸入儀表板密碼以確認刪除</label>
+      <input type="password" id="deldayPwd" placeholder="輸入密碼" maxlength="20" />
+      <button class="delday-submit" onclick="submitDeleteDay()">確認全部刪除</button>
+      <div class="delday-msg" id="deldayMsg"></div>
+    </div>
   </div>
 </div>
 
@@ -205,6 +300,8 @@ function renderOrders(orders, date) {
     '<button onclick="loadDashboard(document.getElementById(\'dateInput\').value)">重新整理</button>' +
     '<button onclick="showStats()" style="background:#0369a1;">📊 品項統計</button>' +
     '<button onclick="exportExcel(event)" style="background:#1864ab;">📥 匯出Excel</button>' +
+    '<button onclick="showOverview()" style="background:#0d6efd;">📅 各日總覽</button>' +
+    '<button onclick="showDeleteDay()" style="background:#c0392b;">🗑️ 刪除當天全部</button>' +
     '<button onclick="showChangePwd()" style="background:#555;">🔑 修改密碼</button>' +
     '</div>';
 
@@ -250,7 +347,10 @@ function renderOrders(orders, date) {
         o.items.map(it => '<div>• ' + escapeHtml(it.name) + '　' + it.qty + (it.unit||'') + (it.note ? '（'+escapeHtml(it.note)+'）' : '') + '</div>').join('') +
         (o.logs && o.logs.length ? '<div style="margin-top:8px;border-top:1px dashed #e0e0e0;padding-top:6px;">' +
           o.logs.map(l => '<div class="log-line">' + l.time + '　' + l.detail + '</div>').join('') + '</div>' : '') +
-        '<button class="delete-btn" style="background:#f0fdf4;color:#166534;border-color:#86efac;margin-top:6px;" onclick="event.stopPropagation();showPrint(' + idx + ')">🖨️ 列印送貨單</button>' +
+        '<div style="display:flex;gap:8px;margin-top:6px;">' +
+          '<button class="delete-btn" style="flex:1;background:#f0fdf4;color:#166534;border-color:#86efac;margin-top:0;" onclick="event.stopPropagation();showPrint(' + idx + ')">🖨️ 列印送貨單</button>' +
+          '<button class="delete-btn" style="flex:0 0 auto;width:auto;padding:8px 16px;background:#e8f0fe;color:#1e40af;border-color:#93c5fd;margin-top:0;" onclick="event.stopPropagation();showBatchPriceFromCard(' + idx + ')">💰 批價</button>' +
+        '</div>' +
         '<button class="delete-btn" onclick="event.stopPropagation();deleteOrder(\'' + o.orderId + '\',\'' + escapeHtml(o.customer).replace(/'/g,"\\'") + '\')">🗑️ 刪除這筆訂單（測試用，正式資料請用「取消」）</button>' +
       '</div>' +
     '</div>';
@@ -462,6 +562,202 @@ function showStats() {
 
 function closeStats() {
   document.getElementById('statsOverlay').classList.remove('open');
+}
+
+function showBatchPriceFromCard(idx) {
+  // 從卡片開批價（不需要先開列印 modal）
+  printOrderIdx = idx;
+  showBatchPrice();
+}
+
+function showBatchPrice() {
+  const o = currentOrders[printOrderIdx];
+  document.getElementById('priceInfo').textContent = '客戶：' + o.customer + '　送貨日期：' + (o.deliveryDate || '');
+  let rows = '';
+  (o.items || []).forEach((it, i) => {
+    // 優先讀列印表格已輸入的值，其次讀 localStorage
+    const printEl = document.getElementById('price_' + i);
+    const val = (printEl && printEl.value) ? printEl.value : getSavedPrice(it.name || '');
+    rows += '<div class="price-row">' +
+      '<div class="price-name">' + escapeHtml(it.name || '') + '</div>' +
+      '<div class="price-qty">' + it.qty + (it.unit || '') + '</div>' +
+      '<input class="price-input" type="number" min="0" step="0.01" value="' + val + '" id="bp_' + i + '" placeholder="單價" />' +
+    '</div>';
+  });
+  document.getElementById('priceRows').innerHTML = rows;
+  document.getElementById('priceOverlay').classList.add('open');
+  // 自動 focus 第一個空白的欄位
+  const first = (o.items || []).findIndex((it, i) => {
+    const el = document.getElementById('bp_' + i);
+    return el && !el.value;
+  });
+  const focusIdx = first >= 0 ? first : 0;
+  setTimeout(() => { const el = document.getElementById('bp_' + focusIdx); if (el) el.focus(); }, 100);
+}
+
+function closeBatchPrice() {
+  document.getElementById('priceOverlay').classList.remove('open');
+}
+
+function applyBatchPrice() {
+  const o = currentOrders[printOrderIdx];
+  (o.items || []).forEach((it, i) => {
+    const bpEl = document.getElementById('bp_' + i);
+    if (!bpEl) return;
+    savePrice(it.name || '', bpEl.value);  // 一定存 localStorage
+    const printEl = document.getElementById('price_' + i);
+    if (printEl) {
+      printEl.value = bpEl.value;          // 列印 modal 若開著也同步更新
+    }
+  });
+  if (document.getElementById('printOverlay').classList.contains('open')) {
+    calcPrintTotal();
+  }
+  closeBatchPrice();
+}
+
+function showOverview() {
+  document.getElementById('overviewBody').innerHTML = '<div class="overview-loading">載入中…</div>';
+  document.getElementById('overviewOverlay').classList.add('open');
+
+  fetch(V2_GAS_URL + '?action=dashboard&pwd=' + encodeURIComponent(pwd))
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { document.getElementById('overviewBody').innerHTML = '<div class="overview-loading" style="color:#c0392b;">載入失敗：' + data.error + '</div>'; return; }
+      const orders = data.orders || [];
+
+      // 依送貨日期分組
+      const dateMap = {};
+      orders.forEach(o => {
+        const d = o.deliveryDate || '（未知）';
+        if (!dateMap[d]) dateMap[d] = { active: 0, cancelled: 0 };
+        if (o.status === 'cancelled') dateMap[d].cancelled++;
+        else dateMap[d].active++;
+      });
+
+      const dates = Object.keys(dateMap).sort();
+      if (!dates.length) {
+        document.getElementById('overviewBody').innerHTML = '<div class="overview-loading">目前沒有任何訂單紀錄</div>';
+        return;
+      }
+
+      let totalActive = 0, totalCancelled = 0;
+      let rows = '';
+      dates.forEach(d => {
+        const a = dateMap[d].active, c = dateMap[d].cancelled;
+        totalActive += a; totalCancelled += c;
+        rows += '<tr onclick="jumpToDate(\'' + d + '\')">' +
+          '<td>' + d + '</td>' +
+          '<td class="tag-active">' + a + '</td>' +
+          '<td class="tag-cancelled">' + (c || '—') + '</td>' +
+          '<td>' + (a + c) + '</td>' +
+        '</tr>';
+      });
+      rows += '<tr>' +
+        '<td>合計</td>' +
+        '<td class="tag-active">' + totalActive + '</td>' +
+        '<td class="tag-cancelled">' + (totalCancelled || '—') + '</td>' +
+        '<td>' + (totalActive + totalCancelled) + '</td>' +
+      '</tr>';
+
+      document.getElementById('overviewBody').innerHTML =
+        '<p style="font-size:12px;color:#888;margin:0 0 10px;">點選任一列可切換到該日</p>' +
+        '<table class="overview-table">' +
+          '<thead><tr><th>送貨日期</th><th>有效</th><th>已取消</th><th>合計</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody>' +
+        '</table>';
+    })
+    .catch(() => { document.getElementById('overviewBody').innerHTML = '<div class="overview-loading" style="color:#c0392b;">連線失敗，請檢查網路</div>'; });
+}
+
+function closeOverview() {
+  document.getElementById('overviewOverlay').classList.remove('open');
+}
+
+function jumpToDate(date) {
+  closeOverview();
+  document.getElementById('dateInput').value = date;
+  loadDashboard(date);
+}
+
+function showDeleteDay() {
+  const date = document.getElementById('dateInput').value;
+  document.getElementById('deldayDate').value = date;
+  document.getElementById('deldayPwd').value = '';
+  document.getElementById('deldayMsg').textContent = '';
+  updateDeldayWarning();
+  document.getElementById('deldayOverlay').classList.add('open');
+}
+
+function updateDeldayWarning() {
+  const date = document.getElementById('deldayDate').value;
+  const warningEl = document.getElementById('deldayWarning');
+  const submitBtn = document.querySelector('.delday-submit');
+  if (!date) {
+    warningEl.innerHTML = '請先選擇日期。';
+    submitBtn.disabled = true;
+    submitBtn.style.opacity = '0.5';
+    return;
+  }
+  // 計算該日訂單數（從 currentOrders 比對，或顯示「需查詢」）
+  const sameDay = currentOrders.filter(o => o.deliveryDate === date);
+  const countText = (date === document.getElementById('dateInput').value)
+    ? '共 <strong>' + currentOrders.length + '</strong> 筆（含已取消）'
+    : '（筆數以實際為準）';
+  warningEl.innerHTML =
+    '日期：<strong>' + date + '</strong><br>' +
+    countText + ' 將被<strong>永久刪除</strong>，無法復原。<br>這跟「取消」不同，連紀錄都會消失。';
+  submitBtn.disabled = false;
+  submitBtn.style.opacity = '1';
+}
+
+function closeDeleteDay() {
+  document.getElementById('deldayOverlay').classList.remove('open');
+}
+
+function submitDeleteDay() {
+  const inputPwd = document.getElementById('deldayPwd').value.trim();
+  const selectedDate = document.getElementById('deldayDate').value;
+  const msgEl = document.getElementById('deldayMsg');
+  if (!selectedDate) { msgEl.style.color = '#c0392b'; msgEl.textContent = '請先選擇日期'; return; }
+  if (!inputPwd) { msgEl.style.color = '#c0392b'; msgEl.textContent = '請輸入密碼'; return; }
+  if (inputPwd !== pwd) { msgEl.style.color = '#c0392b'; msgEl.textContent = '密碼錯誤'; return; }
+
+  // 如果選的日期就是目前已載入的日期，直接用 currentOrders；否則先查詢
+  const isSameDate = selectedDate === document.getElementById('dateInput').value;
+  const ids = isSameDate ? currentOrders.map(o => o.orderId) : null;
+
+  msgEl.style.color = '#555'; msgEl.textContent = '查詢中…';
+
+  const doDelete = (idsToDelete) => {
+    if (!idsToDelete.length) { msgEl.style.color = '#888'; msgEl.textContent = '這天沒有任何訂單'; return; }
+    msgEl.textContent = '刪除中…';
+
+    fetch(V2_GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'deleteBatch', ids: idsToDelete, pwd: pwd })
+    })
+    .then(r => r.json())
+    .then(result => {
+      if (result.error) { msgEl.style.color = '#c0392b'; msgEl.textContent = '刪除失敗：' + result.error; return; }
+      closeDeleteDay();
+      loadDashboard(selectedDate);
+    })
+    .catch(() => { msgEl.style.color = '#c0392b'; msgEl.textContent = '連線失敗，請檢查網路'; });
+  };
+
+  if (ids) {
+    doDelete(ids);
+  } else {
+    // 選的是其他日期，先查詢該日訂單
+    fetch(V2_GAS_URL + '?action=dashboard&date=' + encodeURIComponent(selectedDate) + '&pwd=' + encodeURIComponent(pwd))
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { msgEl.style.color = '#c0392b'; msgEl.textContent = '查詢失敗：' + data.error; return; }
+        doDelete((data.orders || []).map(o => o.orderId));
+      })
+      .catch(() => { msgEl.style.color = '#c0392b'; msgEl.textContent = '連線失敗，請檢查網路'; });
+  }
 }
 
 function showChangePwd() {
