@@ -71,6 +71,20 @@
   .print-send:active { background:#1532a0; }
   .bridge-url-row { display:flex; gap:6px; margin-bottom:10px; align-items:center; font-size:12px; color:#555; }
   .bridge-url-row input { flex:1; border:1.5px solid #ddd; border-radius:6px; padding:5px 8px; font-size:12px; }
+  /* 修改密碼 modal */
+  .pwd-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:400; align-items:center; justify-content:center; }
+  .pwd-overlay.open { display:flex; }
+  .pwd-box { background:white; border-radius:16px; width:90%; max-width:360px; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
+  .pwd-header { background:#1e40af; color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; }
+  .pwd-header h2 { margin:0; font-size:16px; }
+  .pwd-close { background:none; border:none; color:white; font-size:22px; cursor:pointer; padding:0 4px; }
+  .pwd-body { padding:20px; }
+  .pwd-body label { display:block; font-size:13px; color:#555; margin-bottom:4px; margin-top:14px; }
+  .pwd-body label:first-child { margin-top:0; }
+  .pwd-body input { width:100%; box-sizing:border-box; border:1.5px solid #bfdbfe; border-radius:8px; padding:10px; font-size:15px; }
+  .pwd-body input:focus { outline:none; border-color:#1e40af; }
+  .pwd-submit { display:block; width:100%; margin-top:18px; padding:12px; background:#1e40af; color:white; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; }
+  .pwd-msg { margin-top:10px; font-size:13px; text-align:center; }
 </style>
 </head>
 <body>
@@ -86,6 +100,26 @@
       <button class="stats-close" onclick="closeStats()">×</button>
     </div>
     <div class="stats-body" id="statsBody"></div>
+  </div>
+</div>
+
+<!-- 修改密碼 Modal -->
+<div class="pwd-overlay" id="pwdOverlay" onclick="if(event.target===this)closeChangePwd()">
+  <div class="pwd-box">
+    <div class="pwd-header">
+      <h2>🔑 修改密碼</h2>
+      <button class="pwd-close" onclick="closeChangePwd()">×</button>
+    </div>
+    <div class="pwd-body">
+      <label>目前密碼</label>
+      <input type="password" id="pwdOld" placeholder="輸入目前密碼" maxlength="20" />
+      <label>新密碼</label>
+      <input type="password" id="pwdNew" placeholder="輸入新密碼" maxlength="20" />
+      <label>確認新密碼</label>
+      <input type="password" id="pwdConfirm" placeholder="再輸入一次新密碼" maxlength="20" />
+      <button class="pwd-submit" onclick="submitChangePwd()">確認修改</button>
+      <div class="pwd-msg" id="pwdMsg"></div>
+    </div>
   </div>
 </div>
 
@@ -171,6 +205,7 @@ function renderOrders(orders, date) {
     '<button onclick="loadDashboard(document.getElementById(\'dateInput\').value)">重新整理</button>' +
     '<button onclick="showStats()" style="background:#0369a1;">📊 品項統計</button>' +
     '<button onclick="exportExcel(event)" style="background:#1864ab;">📥 匯出Excel</button>' +
+    '<button onclick="showChangePwd()" style="background:#555;">🔑 修改密碼</button>' +
     '</div>';
 
   const activeOrders   = orders.filter(o => o.status !== 'cancelled');
@@ -427,6 +462,63 @@ function showStats() {
 
 function closeStats() {
   document.getElementById('statsOverlay').classList.remove('open');
+}
+
+function showChangePwd() {
+  document.getElementById('pwdOld').value = '';
+  document.getElementById('pwdNew').value = '';
+  document.getElementById('pwdConfirm').value = '';
+  document.getElementById('pwdMsg').textContent = '';
+  document.getElementById('pwdMsg').style.color = '#333';
+  document.getElementById('pwdOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('pwdOld').focus(), 100);
+}
+
+function closeChangePwd() {
+  document.getElementById('pwdOverlay').classList.remove('open');
+}
+
+function submitChangePwd() {
+  const oldPwd = document.getElementById('pwdOld').value.trim();
+  const newPwd = document.getElementById('pwdNew').value.trim();
+  const confirm = document.getElementById('pwdConfirm').value.trim();
+  const msgEl = document.getElementById('pwdMsg');
+
+  if (!oldPwd || !newPwd || !confirm) {
+    msgEl.style.color = '#c0392b'; msgEl.textContent = '請填寫所有欄位'; return;
+  }
+  if (oldPwd !== pwd) {
+    msgEl.style.color = '#c0392b'; msgEl.textContent = '目前密碼錯誤'; return;
+  }
+  if (newPwd.length < 4) {
+    msgEl.style.color = '#c0392b'; msgEl.textContent = '新密碼至少需要 4 個字元'; return;
+  }
+  if (newPwd !== confirm) {
+    msgEl.style.color = '#c0392b'; msgEl.textContent = '兩次新密碼不一致'; return;
+  }
+
+  msgEl.style.color = '#555'; msgEl.textContent = '送出中…';
+
+  fetch(V2_GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'changePassword', oldPwd: oldPwd, newPwd: newPwd })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      pwd = newPwd;
+      sessionStorage.setItem('hefeng_dashboard_pwd', newPwd);
+      msgEl.style.color = '#1e8c3a'; msgEl.textContent = '✅ 密碼已成功修改！';
+      setTimeout(() => closeChangePwd(), 1500);
+    } else {
+      msgEl.style.color = '#c0392b';
+      msgEl.textContent = data.error || '修改失敗，請再試一次';
+    }
+  })
+  .catch(() => {
+    msgEl.style.color = '#c0392b'; msgEl.textContent = '連線失敗，請檢查網路';
+  });
 }
 
 if (pwd) loadDashboard(); else renderLogin();
