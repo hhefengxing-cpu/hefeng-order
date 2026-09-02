@@ -501,7 +501,6 @@ function submitChangePwd() {
 
   fetch(V2_GAS_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'changePassword', oldPwd: oldPwd, newPwd: newPwd })
   })
   .then(r => r.json())
