@@ -15,6 +15,16 @@
   .toolbar { display:flex; gap:8px; align-items:center; margin-bottom:14px; }
   .toolbar input[type=date] { flex:1; border:1.5px solid #bfdbfe; border-radius:8px; padding:8px; font-size:14px; }
   .toolbar button { background:#1e40af; color:white; border:none; border-radius:8px; padding:8px 14px; font-size:14px; cursor:pointer; }
+  /* dropdown menu */
+  .toolbar-menu-wrap { position:relative; flex-shrink:0; }
+  .toolbar-menu-btn { background:#1e40af; color:white; border:none; border-radius:8px; padding:8px 14px; font-size:20px; cursor:pointer; line-height:1; display:flex; align-items:center; gap:4px; }
+  .toolbar-dropdown { display:none; position:absolute; top:calc(100% + 6px); right:0; background:white; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.18); min-width:180px; z-index:100; overflow:hidden; }
+  .toolbar-dropdown.open { display:block; }
+  .toolbar-dropdown button { display:block; width:100%; text-align:left; background:none; color:#222; border:none; border-bottom:1px solid #f0f0f0; padding:13px 18px; font-size:15px; cursor:pointer; }
+  .toolbar-dropdown button:last-child { border-bottom:none; }
+  .toolbar-dropdown button:hover { background:#f0f7ff; color:#1e40af; }
+  .toolbar-dropdown .menu-danger { color:#c0392b; }
+  .toolbar-dropdown .menu-danger:hover { background:#fff5f5; color:#c0392b; }
   .order-card { background:white; border-radius:12px; padding:14px 16px; margin-bottom:10px; box-shadow:0 1px 6px rgba(0,0,0,0.06); }
   .order-head { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
   .customer-name { font-weight:700; font-size:15px; }
@@ -285,6 +295,7 @@ function loadDashboard(dateOverride) {
     .then(data => {
       if (data.error === 'unauthorized') { renderLogin('密碼錯誤，請再試一次'); return; }
       sessionStorage.setItem('hefeng_dashboard_pwd', pwd);
+      loadPricesFromGAS();   // 登入後拉取雲端批價
       renderOrders(data.orders || [], date);
     })
     .catch(() => renderLogin('連線失敗，請檢查網路後再試一次'));
@@ -298,11 +309,16 @@ function renderOrders(orders, date) {
   let html = '<div class="toolbar">' +
     '<input type="date" id="dateInput" value="' + date + '" onchange="loadDashboard(this.value)">' +
     '<button onclick="loadDashboard(document.getElementById(\'dateInput\').value)">重新整理</button>' +
-    '<button onclick="showStats()" style="background:#0369a1;">📊 品項統計</button>' +
-    '<button onclick="exportExcel(event)" style="background:#1864ab;">📥 匯出Excel</button>' +
-    '<button onclick="showOverview()" style="background:#0d6efd;">📅 各日總覽</button>' +
-    '<button onclick="showDeleteDay()" style="background:#c0392b;">🗑️ 刪除當天全部</button>' +
-    '<button onclick="showChangePwd()" style="background:#555;">🔑 修改密碼</button>' +
+    '<div class="toolbar-menu-wrap">' +
+      '<button class="toolbar-menu-btn" onclick="toggleToolbarMenu(event)" title="功能選單">☰</button>' +
+      '<div class="toolbar-dropdown" id="toolbarDropdown">' +
+        '<button onclick="closeToolbarMenu();showStats()">📊 品項統計</button>' +
+        '<button onclick="closeToolbarMenu();exportExcel(event)">📥 匯出Excel</button>' +
+        '<button onclick="closeToolbarMenu();showOverview()">📅 各日總覽</button>' +
+        '<button class="menu-danger" onclick="closeToolbarMenu();showDeleteDay()">🗑️ 刪除當天全部</button>' +
+        '<button onclick="closeToolbarMenu();showChangePwd()">🔑 修改密碼</button>' +
+      '</div>' +
+    '</div>' +
     '</div>';
 
   const activeOrders   = orders.filter(o => o.status !== 'cancelled');
@@ -431,15 +447,58 @@ function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
+function toggleToolbarMenu(e) {
+  e.stopPropagation();
+  var dd = document.getElementById('toolbarDropdown');
+  dd.classList.toggle('open');
+}
+function closeToolbarMenu() {
+  var dd = document.getElementById('toolbarDropdown');
+  if (dd) dd.classList.remove('open');
+}
+document.addEventListener('click', function() { closeToolbarMenu(); });
+
 let currentOrders = [];
 let printOrderIdx = -1;
 
-// 記住每個品項的上次單價 (localStorage)
+// ── 批價記憶：同步存在 GAS（跨裝置），localStorage 作快取 ──
+var _gasPrices = {};  // 從 GAS 載入後放在這裡
+
 function getSavedPrice(name) {
+  // 優先用 GAS 載入的值，沒有才回退 localStorage
+  if (_gasPrices[name] !== undefined && _gasPrices[name] !== '') return String(_gasPrices[name]);
   try { return localStorage.getItem('price_' + name) || ''; } catch(e) { return ''; }
 }
+
 function savePrice(name, val) {
+  // 同時更新記憶體快取和 localStorage
+  if (val !== '') _gasPrices[name] = val;
   try { localStorage.setItem('price_' + name, val); } catch(e) {}
+}
+
+function loadPricesFromGAS() {
+  // 登入後呼叫一次，把 GAS 的批價表載到 _gasPrices
+  fetch(V2_GAS_URL + '?action=loadPrices&pwd=' + encodeURIComponent(pwd))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (data.prices) {
+        _gasPrices = data.prices;
+        // 同步回 localStorage，讓離線時也能用
+        Object.keys(_gasPrices).forEach(function(name){
+          try { localStorage.setItem('price_' + name, _gasPrices[name]); } catch(e){}
+        });
+      }
+    })
+    .catch(function(){});  // 失敗就靜默，還是能用 localStorage
+}
+
+function savePricesToGAS() {
+  // 確認批價後呼叫，把最新批價表存到 GAS
+  fetch(V2_GAS_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: 'savePrices', pwd: pwd, prices: _gasPrices})
+  }).catch(function(){});  // 失敗靜默，至少 localStorage 已存
 }
 
 function showPrint(idx) {
@@ -507,7 +566,7 @@ function sendPrint() {
     const sub = price * qty;
     total += sub;
     savePrice(it.name || '', String(price));
-    r += (it.name||'') + '　' + qty + (it.unit||'') + LF;
+    r += (it.name || '') + '　' + qty + (it.unit||'') + LF;
     r += '  單價：$' + price + '　小計：$' + sub + LF;
   });
 
@@ -528,7 +587,7 @@ function sendPrint() {
     body: bytes
   })
   .then(res => {
-    if (res.ok) { alert('✅ 已送出列印！'); closePrint(); }
+    if (res.ok) { savePricesToGAS(); alert('✅ 已送出列印！'); closePrint(); }
     else res.text().then(t => alert('列印失敗：' + t));
   })
   .catch(err => alert('連線失敗，請確認 Galaxy-S10 橋接器已啟動。\n\n' + err));
@@ -613,6 +672,7 @@ function applyBatchPrice() {
   if (document.getElementById('printOverlay').classList.contains('open')) {
     calcPrintTotal();
   }
+  savePricesToGAS();   // 存到 GAS，下次換手機也能讀到
   closeBatchPrice();
 }
 
