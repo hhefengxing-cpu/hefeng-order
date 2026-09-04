@@ -550,13 +550,15 @@ function sendPrint() {
   let r = '';
   r += ESC + '@';            // 初始化
   r += ESC + 'a\x01';       // 置中
+  r += GS + '!\x11';        // 2倍高
   r += ESC + 'E\x01';       // 粗體
   r += '合豐行' + LF;
+  r += GS + '!\x00';        // 恢復正常
   r += ESC + 'E\x00';
   r += '送貨日期：' + (o.deliveryDate || '') + LF;
   r += '客戶：' + (o.customer || '') + LF;
   r += ESC + 'a\x00';       // 靠左
-  r += '--------------------------------' + LF;
+  r += '------------------------------------------------' + LF;  // 80mm ≈ 48 字元
 
   let total = 0;
   (o.items || []).forEach((it, i) => {
@@ -566,14 +568,18 @@ function sendPrint() {
     const sub = price * qty;
     total += sub;
     savePrice(it.name || '', String(price));
-    r += (it.name || '') + '　' + qty + (it.unit||'') + LF;
-    r += '  單價：$' + price + '　小計：$' + sub + LF;
+    // 一行格式：品名  數量單位  單價  小計
+    r += (it.name || '') + '  ' + qty + (it.unit||'') + '  $' + price + '/件  $' + sub + LF;
   });
 
-  r += '--------------------------------' + LF;
+  r += '------------------------------------------------' + LF;
+  r += ESC + 'a\x01';       // 置中
+  r += GS + '!\x22';        // 2倍寬高
   r += ESC + 'E\x01';
-  r += '總計：$' + total + LF;
+  r += '總計 $' + total + LF;
   r += ESC + 'E\x00';
+  r += GS + '!\x00';        // 恢復正常
+  r += ESC + 'a\x00';       // 靠左
   if (o.notes) r += '備註：' + o.notes + LF;
   r += LF + LF + LF;
   r += GS + 'V\x42\x00';   // 切紙
