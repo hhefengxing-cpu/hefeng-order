@@ -249,7 +249,7 @@
     <div class="print-body">
       <div class="bridge-url-row">
         <span>橋接器：</span>
-        <input type="text" id="bridgeUrl" value="http://192.168.1.105:9100/print" />
+        <input type="text" id="bridgeUrl" placeholder="自動偵測中..." />
       </div>
       <div class="print-info" id="printInfo"></div>
       <table class="print-table">
@@ -269,7 +269,7 @@
 <script>
 // ★ 部署好新的 Apps Script 後，把網址貼在這裡（跟 order.html 用同一個）
 const V2_GAS_URL = 'https://script.google.com/macros/s/AKfycbwWggz9BZjz3Y_sioE5wDr0WjNeQh0mTtIWbSJmbacPqWbsreDyt2E7kb8lJg7R_r0M/exec';
-const FRONTEND_VERSION = 'v2.10-合豐行-2026-09-10';
+const FRONTEND_VERSION = 'v2.12-合豐行-2026-09-10';
 
 fetch(V2_GAS_URL + '?action=ping').then(r=>r.json()).then(d=>{
   const el = document.createElement('div');
@@ -517,12 +517,54 @@ function savePricesToGAS() {
   }).catch(function(){});  // 失敗靜默，至少 localStorage 已存
 }
 
+// ★ 自動偵測橋接器 URL
+// 從 PrintBridge 本機開啟（http://）→ 用同一台機器的 /print（不需掃描）
+// 從 GitHub Pages（https://）→ 先用記憶的 IP，沒有則掃描 iPhone 熱點固定段 172.20.10.x
+
+async function autoDiscoverBridge() {
+  // iPhone 熱點固定分配 172.20.10.2 ~ 172.20.10.15 給連線裝置
+  const ips = Array.from({length: 14}, (_, i) => '172.20.10.' + (i + 2));
+  const found = await Promise.any(ips.map(async (ip) => {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 1500);
+    const r = await fetch('http://' + ip + ':9100/status', { signal: ctrl.signal });
+    if (!r.ok) throw new Error('not ok');
+    return ip;
+  })).catch(() => null);
+  return found;
+}
+
+async function autoFillBridgeUrl() {
+  const input = document.getElementById('bridgeUrl');
+  // 從 PrintBridge 本機開啟：直接用同一台機器
+  if (window.location.protocol === 'http:') {
+    input.value = window.location.origin + '/print';
+    return;
+  }
+  // GitHub Pages：先試記憶的 IP
+  try {
+    const stored = localStorage.getItem('hefeng_bridgeUrl');
+    if (stored) { input.value = stored; return; }
+  } catch(e) {}
+  // 沒有記憶：自動掃描
+  input.value = '';
+  input.placeholder = '🔍 自動掃描中...';
+  const ip = await autoDiscoverBridge();
+  if (ip) {
+    const url = 'http://' + ip + ':9100/print';
+    input.value = url;
+    input.placeholder = '自動偵測';
+    try { localStorage.setItem('hefeng_bridgeUrl', url); } catch(e) {}
+  } else {
+    input.placeholder = '找不到印表機，請手動輸入 IP';
+  }
+}
+
 function showPrint(idx) {
   printOrderIdx = idx;
-  // 讀取上次記憶的橋接器 URL 和經手人
+  // 自動偵測橋接器 URL（async，不阻塞 modal 開啟）
+  autoFillBridgeUrl();
   try {
-    const saved = localStorage.getItem('hefeng_bridgeUrl');
-    if (saved) document.getElementById('bridgeUrl').value = saved;
     const savedHandler = localStorage.getItem('hefeng_handler');
     if (savedHandler) document.getElementById('printHandler').value = savedHandler;
   } catch(e) {}
