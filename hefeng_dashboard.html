@@ -77,8 +77,19 @@
   .print-table td:first-child { text-align:left; }
   .print-table input[type=number] { width:70px; border:1.5px solid #bfdbfe; border-radius:6px; padding:4px 6px; font-size:13px; text-align:right; }
   .print-total { text-align:right; font-size:16px; font-weight:700; color:#1e40af; padding:8px 4px; border-top:2px solid #1e40af; margin-top:4px; }
-  .print-send { display:block; width:100%; margin-top:12px; padding:12px; background:#1e40af; color:white; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; }
+  .print-preview { display:block; width:100%; margin-top:12px; padding:10px; background:#e0f2fe; color:#0369a1; border:1.5px solid #7dd3fc; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; }
+  .print-preview:active { background:#bae6fd; }
+  .print-send { display:block; width:100%; margin-top:8px; padding:12px; background:#1e40af; color:white; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; }
   .print-send:active { background:#1532a0; }
+  /* 預覽 Modal */
+  .preview-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:9000; display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; padding:20px; }
+  .preview-box { background:white; border-radius:14px; padding:18px; width:100%; max-width:440px; margin:auto; }
+  .preview-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .preview-header h3 { margin:0; font-size:16px; }
+  .preview-close { background:none; border:none; font-size:22px; cursor:pointer; line-height:1; }
+  .preview-paper { border:2px solid #555; background:#fffef0; font-family:'Courier New',Courier,monospace; font-size:10px; line-height:1.55; padding:6px 8px; white-space:pre; overflow-x:auto; margin-bottom:6px; }
+  .preview-trail { background:repeating-linear-gradient(45deg,#f3f3f3,#f3f3f3 3px,#ffffff 3px,#ffffff 9px); text-align:center; color:#aaa; font-size:11px; padding:4px 0; }
+  .preview-stat { text-align:center; font-size:12px; color:#555; margin-bottom:14px; }
   .bridge-url-row { display:flex; gap:6px; margin-bottom:10px; align-items:center; font-size:12px; color:#555; }
   .bridge-url-row input { flex:1; border:1.5px solid #ddd; border-radius:6px; padding:5px 8px; font-size:12px; }
   /* 修改密碼 modal */
@@ -238,7 +249,7 @@
     <div class="print-body">
       <div class="bridge-url-row">
         <span>橋接器：</span>
-        <input type="text" id="bridgeUrl" value="http://192.168.1.105:8080/print" />
+        <input type="text" id="bridgeUrl" value="http://192.168.1.105:9100/print" />
       </div>
       <div class="print-info" id="printInfo"></div>
       <table class="print-table">
@@ -246,6 +257,10 @@
         <tbody id="printItems"></tbody>
       </table>
       <div class="print-total" id="printTotal">總計：$0</div>
+      <div class="bridge-url-row" style="margin-top:10px;">
+        <span>經手人：</span>
+        <input type="text" id="printHandler" placeholder="（選填）" style="flex:1;border:1.5px solid #ddd;border-radius:6px;padding:5px 8px;font-size:13px;" />
+      </div>
       <button class="print-send" onclick="sendPrint()">📤 送出列印</button>
     </div>
   </div>
@@ -254,7 +269,7 @@
 <script>
 // ★ 部署好新的 Apps Script 後，把網址貼在這裡（跟 order.html 用同一個）
 const V2_GAS_URL = 'https://script.google.com/macros/s/AKfycbwWggz9BZjz3Y_sioE5wDr0WjNeQh0mTtIWbSJmbacPqWbsreDyt2E7kb8lJg7R_r0M/exec';
-const FRONTEND_VERSION = 'v1.0-合豐行-2026-08-21';
+const FRONTEND_VERSION = 'v2.10-合豐行-2026-09-10';
 
 fetch(V2_GAS_URL + '?action=ping').then(r=>r.json()).then(d=>{
   const el = document.createElement('div');
@@ -462,7 +477,8 @@ let currentOrders = [];
 let printOrderIdx = -1;
 
 // ── 批價記憶：同步存在 GAS（跨裝置），localStorage 作快取 ──
-var _gasPrices = {};  // 從 GAS 載入後放在這裡
+var _gasPrices = {};   // 從 GAS 載入後放在這裡
+var _saveTimer = null; // 防抖動計時器（批價自動存 GAS）
 
 function getSavedPrice(name) {
   // 優先用 GAS 載入的值，沒有才回退 localStorage
@@ -503,6 +519,13 @@ function savePricesToGAS() {
 
 function showPrint(idx) {
   printOrderIdx = idx;
+  // 讀取上次記憶的橋接器 URL 和經手人
+  try {
+    const saved = localStorage.getItem('hefeng_bridgeUrl');
+    if (saved) document.getElementById('bridgeUrl').value = saved;
+    const savedHandler = localStorage.getItem('hefeng_handler');
+    if (savedHandler) document.getElementById('printHandler').value = savedHandler;
+  } catch(e) {}
   const o = currentOrders[idx];
   document.getElementById('printInfo').innerHTML =
     '<strong>客戶：</strong>' + escapeHtml(o.customer) +
@@ -533,59 +556,306 @@ function calcPrintTotal() {
     const sub = price * qty;
     total += sub;
     document.getElementById('sub_' + i).textContent = price ? '$' + sub : '—';
+    // 即時更新快取 + localStorage
+    if (price > 0) savePrice(it.name || '', String(price));
   });
   document.getElementById('printTotal').textContent = '總計：$' + total;
+  // 防抖動：最後一次改價後 2 秒自動存到 GAS（換帳號也不會消失）
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(function() {
+    savePricesToGAS();
+    _saveTimer = null;
+  }, 2000);
 }
 
 function closePrint() {
   document.getElementById('printOverlay').classList.remove('open');
 }
 
+// ── 列印欄位對齊工具（考慮中文佔 2 格）──
+function _clen(s) {
+  return [...String(s||'')].reduce((a,c) => a + (c.charCodeAt(0) > 127 ? 2 : 1), 0);
+}
+function padR(s, n) { s = String(s||''); return s + ' '.repeat(Math.max(0, n - _clen(s))); }
+function padL(s, n) { s = String(s||''); return ' '.repeat(Math.max(0, n - _clen(s))) + s; }
+
+// ── Big5 編碼器（使用瀏覽器內建 TextDecoder 建立反查表）──
+// 原理：TextDecoder 支援 Big5 解碼，利用它逐一解碼所有 Big5 雙位元組組合，
+// 建立「Unicode 字元 → Big5 雙位元組」的反查表，再用來把印表機字串轉成 Big5。
+var _big5Table = null;
+function _getBig5Table() {
+  if (_big5Table) return _big5Table;
+  _big5Table = {};
+  var dec = new TextDecoder('big5', { fatal: false });
+  // Big5 高位元組：0xA1–0xF9，低位元組：0x40–0x7E 和 0xA1–0xFE
+  for (var hi = 0xA1; hi <= 0xF9; hi++) {
+    for (var lo = 0x40; lo <= 0xFE; lo++) {
+      if (lo >= 0x7F && lo <= 0xA0) continue;  // 無效區間
+      var bytes = new Uint8Array([hi, lo]);
+      var ch = dec.decode(bytes);
+      // 只收錄非 ASCII、且非替換字元的有效字元
+      if (ch && ch.length === 1 && ch.charCodeAt(0) > 127 && ch !== '�') {
+        _big5Table[ch] = (hi << 8) | lo;
+      }
+    }
+  }
+  return _big5Table;
+}
+function _encodeBig5(str) {
+  var table = _getBig5Table();
+  var buf = [];
+  for (var i = 0; i < str.length; i++) {
+    var c = str[i];
+    var code = c.charCodeAt(0);
+    if (code < 0x80) {
+      buf.push(code);               // ASCII / ESC-POS 控制字元直接輸出
+    } else {
+      var b5 = table[c];
+      if (b5) {
+        buf.push((b5 >> 8) & 0xFF); // Big5 高位元組
+        buf.push(b5 & 0xFF);        // Big5 低位元組
+      } else {
+        buf.push(0x3F);             // 無法對應時輸出 '?'
+      }
+    }
+  }
+  return new Uint8Array(buf);
+}
+
+// ── 螢幕預覽（不列印）──
+function _esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function showReceiptPreview() {
+  const o = currentOrders[printOrderIdx];
+  const handler = (document.getElementById('printHandler').value || '').trim();
+  const ITEMS_PER_PAGE    = 13;
+  const PAPER_TARGET_MM   = 143;   // v2.4校正
+  const C_MM              = 3.87;  // v2.4重新校正（v2.3實測）
+  const T_MM              = 3.61;  // v2.4重新校正
+  const FIXED_LINES       = 13;
+  const SEP40 = '----------------------------------------';
+
+  const items = o.items || [];
+  const numPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
+
+  let total = 0;
+  const prices = items.map((it, i) => {
+    const priceEl = document.getElementById('price_' + i);
+    const price = parseFloat(priceEl ? priceEl.value : 0) || 0;
+    total += price * (Number(it.qty) || 0);
+    return price;
+  });
+
+  let pagesHtml = '';
+  for (let page = 0; page < numPages; page++) {
+    const startIdx    = page * ITEMS_PER_PAGE;
+    const endIdx      = Math.min(startIdx + ITEMS_PER_PAGE, items.length);
+    const pageItemCnt = endIdx - startIdx;
+    const isLast      = page === numPages - 1;
+    const pageTag     = numPages > 1 ? '(' + (page+1) + '/' + numPages + ')' : '';
+
+    let lines = [];
+    const pad = function(s,n,right){
+      var w = 0;
+      for(var k=0;k<s.length;k++) w += s.charCodeAt(k)>127?2:1;
+      var sp = Math.max(0, n - w);
+      return right ? s + ' '.repeat(sp) : ' '.repeat(sp) + s;
+    };
+
+    // 標題9行（含3行間距）
+    var title = '合豐行' + pageTag;
+    var titlePad = Math.max(0, Math.floor((40 - (title.length*2)) / 2));
+    lines.push('<b>' + _esc(' '.repeat(titlePad) + title) + '</b>');    // 行1
+    lines.push('<span style="color:#ccc">·</span>');                     // 行2 [間距]
+    lines.push(_esc('出貨日期：' + (o.deliveryDate || '')));             // 行3
+    lines.push(_esc('客戶：' + (o.customer || '')));                     // 行4
+    lines.push('<span style="color:#ccc">·</span>');                     // 行5 [間距]
+    lines.push('<span style="color:#999">' + _esc(SEP40) + '</span>');  // 行6
+    lines.push('<b>' + _esc(pad('品名',20,true) + pad('數量',6,false) + pad('單價',7,false) + pad('小計',7,false)) + '</b>');  // 行7
+    lines.push('<span style="color:#ccc">·</span>');                     // 行8 [間距]
+    lines.push('<span style="color:#999">' + _esc(SEP40) + '</span>');  // 行9
+
+    // 品項（單行）
+    for (var i = startIdx; i < endIdx; i++) {
+      var it = items[i];
+      var price = prices[i];
+      var qty = Number(it.qty) || 0;
+      var sub = price * qty;
+      var qtyStr = qty + (it.unit || '');
+      lines.push(_esc(pad(it.name||'',20,true) + pad(qtyStr,6,false) + pad(String(price),7,false) + pad(String(sub),7,false)));
+    }
+
+    // 底部4行（含2行間距）
+    lines.push('<span style="color:#999">' + _esc(SEP40) + '</span>');  // 頁尾行1
+    if (isLast) {
+      var left = '經手人：' + handler;
+      var right = '合計：$' + total;
+      var lw = 0; for(var c=0;c<left.length;c++) lw+=left.charCodeAt(c)>127?2:1;
+      var rw = 0; for(var c=0;c<right.length;c++) rw+=right.charCodeAt(c)>127?2:1;
+      var gap = Math.max(1, 40 - lw - rw);
+      lines.push('<b>' + _esc(left + ' '.repeat(gap) + right) + '</b>');  // 頁尾行2
+    } else {
+      lines.push('<span style="text-align:center;display:block">' + _esc('--- 請翻至下一張 ---') + '</span>');  // 頁尾行2
+    }
+    lines.push('<span style="color:#ccc">·</span>');  // 頁尾行3 [間距]
+    lines.push('<span style="color:#ccc">·</span>');  // 頁尾行4 [間距]
+
+    const contentLines = FIXED_LINES + pageItemCnt;
+    const trailLines   = Math.max(1, Math.round((PAPER_TARGET_MM - contentLines * C_MM) / T_MM));
+    const contentMM    = Math.round(contentLines * C_MM);
+    const totalMM      = Math.round(contentMM + trailLines * T_MM);
+    const fillPct      = Math.round(contentMM / PAPER_TARGET_MM * 100);
+
+    if (numPages > 1) {
+      pagesHtml += '<div style="font-weight:600;color:#1e40af;margin-bottom:6px;">第 ' + (page+1) + ' 張 / 共 ' + numPages + ' 張</div>';
+    }
+    pagesHtml += '<div class="preview-paper">' + lines.join('\n') + '</div>';
+    pagesHtml += '<div class="preview-trail">▓ 空白走紙 ' + trailLines + ' LF × ' + T_MM + 'mm = ' + Math.round(trailLines*T_MM) + 'mm</div>';
+    pagesHtml += '<div class="preview-stat">內容 ' + contentMM + 'mm（' + fillPct + '%）+ 走紙 ' + Math.round(trailLines*T_MM) + 'mm ≈ ' + totalMM + 'mm</div>';
+  }
+
+  var modal = document.createElement('div');
+  modal.className = 'preview-overlay';
+  modal.id = 'previewOverlay';
+  modal.onclick = function(e){ if(e.target===modal) closeReceiptPreview(); };
+  modal.innerHTML =
+    '<div class="preview-box">' +
+      '<div class="preview-header">' +
+        '<h3>📄 螢幕預覽（不會列印）</h3>' +
+        '<button class="preview-close" onclick="closeReceiptPreview()">×</button>' +
+      '</div>' +
+      pagesHtml +
+    '</div>';
+  document.body.appendChild(modal);
+}
+
+function closeReceiptPreview() {
+  var el = document.getElementById('previewOverlay');
+  if (el) el.remove();
+}
+
 function sendPrint() {
   const o = currentOrders[printOrderIdx];
   const bridgeUrl = document.getElementById('bridgeUrl').value.trim();
+  const handler = (document.getElementById('printHandler').value || '').trim();
 
-  // ESC/POS 編碼
   const ESC = '\x1b', GS = '\x1d', LF = '\n';
-  let r = '';
-  r += ESC + '@';            // 初始化
-  r += ESC + 'a\x01';       // 置中
-  r += GS + '!\x11';        // 2倍高
-  r += ESC + 'E\x01';       // 粗體
-  r += '合豐行' + LF;
-  r += GS + '!\x00';        // 恢復正常
-  r += ESC + 'E\x00';
-  r += '送貨日期：' + (o.deliveryDate || '') + LF;
-  r += '客戶：' + (o.customer || '') + LF;
-  r += ESC + 'a\x00';       // 靠左
-  r += '------------------------------------------------' + LF;  // 80mm ≈ 48 字元
+  const INDENT   = '  ';          // 左縮排 2 格（≈1個中文字寬）
+  const COL_W    = 40 - INDENT.length;  // 可用寬度 38
+  const SEP = INDENT + '-'.repeat(COL_W) + LF;  // 縮排後 38 條線
 
+  const ITEMS_PER_PAGE      = 13;  // 每張最多品項數
+  // 每行品項後加一空白間距（最後一行不加）→ 12個間距
+  const ITEM_SPACERS        = ITEMS_PER_PAGE - 1; // 12
+  const ITEM_ROW_TOTAL      = ITEMS_PER_PAGE + ITEM_SPACERS; // 25（固定）
+  const LINE_SPACING_N      = 47;  // ESC 3 n（最大安全值=47）
+  // v2.4校正：C=3.87, T=3.61
+  // v2.8：ITEM_ROW_TOTAL=25, contentLines=13+25=38
+  //   38×3.87=147mm > 143mm → PAPER_TARGET=151, trail=1 → ~151mm
+  const PAPER_TARGET_MM  = 151;   // v2.8：每行間距後最小可達紙張長度
+  const C_MM             = 3.87;  // 有內容行推紙 mm
+  const T_MM             = 3.61;  // 空白 LF 推紙 mm
+  const FIXED_LINES      = 13;    // 標題9行＋頁尾4行
+
+  const items = o.items || [];
+  const numPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
+
+  // ── 先算好每項價格與總計 ──
   let total = 0;
-  (o.items || []).forEach((it, i) => {
+  const prices = items.map((it, i) => {
     const priceEl = document.getElementById('price_' + i);
     const price = parseFloat(priceEl ? priceEl.value : 0) || 0;
     const qty = Number(it.qty) || 0;
-    const sub = price * qty;
-    total += sub;
+    total += price * qty;
     savePrice(it.name || '', String(price));
-    // 一行格式：品名  數量單位  單價  小計
-    r += (it.name || '') + '  ' + qty + (it.unit||'') + '  $' + price + '/件  $' + sub + LF;
+    return price;
   });
 
-  r += '------------------------------------------------' + LF;
-  r += ESC + 'a\x01';       // 置中
-  r += GS + '!\x22';        // 2倍寬高
-  r += ESC + 'E\x01';
-  r += '總計 $' + total + LF;
-  r += ESC + 'E\x00';
-  r += GS + '!\x00';        // 恢復正常
-  r += ESC + 'a\x00';       // 靠左
-  if (o.notes) r += '備註：' + o.notes + LF;
-  r += LF + LF + LF;
-  r += GS + 'V\x42\x00';   // 切紙
+  // ── 逐頁組字串，全部串接成一次列印 ──
+  let fullStr = '';
 
-  // 轉成 Uint8Array (UTF-8)
-  const bytes = new TextEncoder().encode(r);
+  for (let page = 0; page < numPages; page++) {
+    const startIdx    = page * ITEMS_PER_PAGE;
+    const endIdx      = Math.min(startIdx + ITEMS_PER_PAGE, items.length);
+    const pageItemCnt = endIdx - startIdx;   // 本頁實際品項數
+    const isLast      = (page === numPages - 1);
+    const pageTag     = numPages > 1 ? '(' + (page + 1) + '/' + numPages + ')' : '';
+
+    let r = ESC + '@';                                          // 初始化印表機
+    r += ESC + '3' + String.fromCharCode(LINE_SPACING_N);      // 設定行距
+
+    // ── 標題區（9行，含3行間距）──
+    r += ESC + 'a\x01';       // 置中
+    r += ESC + 'E\x01';       // 粗體
+    r += ESC + '!\x10';       // 雙倍高度（合豐行專用）
+    r += '合豐行';
+    r += ESC + '!\x00';       // 恢復正常大小
+    r += pageTag + LF;                                                    // 行1
+    r += ESC + 'E\x00';       // 取消粗體
+    r += ESC + 'a\x00';       // 靠左
+    r += INDENT + LF;                                                     // 行2 [間距]
+    r += INDENT + '出貨日期：' + (o.deliveryDate || '') + LF;            // 行3
+    r += INDENT + '客戶：' + (o.customer || '') + LF;                    // 行4
+    r += INDENT + LF;                                                     // 行5 [間距]
+    r += SEP;                                                             // 行6
+    r += INDENT + padR('品名', 18) + padL('數量', 6) + padL('單價', 7) + padL('小計', 7) + LF;  // 行7
+    r += INDENT + LF;                                                     // 行8 [間距]
+    r += SEP;                                                             // 行9
+
+    // ── 品項區：每行品項後加一空白行（最後一行不加），均勻間距 ──
+    let itemSecLines = 0;
+    for (let i = startIdx; i < endIdx; i++) {
+      const it     = items[i];
+      const price  = prices[i];
+      const qty    = Number(it.qty) || 0;
+      const sub    = price * qty;
+      const qtyStr = qty + (it.unit || '');
+      r += INDENT + padR(it.name || '', 18) + padL(qtyStr, 6) + padL(String(price), 7) + padL(String(sub), 7) + LF;
+      itemSecLines++;
+      // 每行品項後加間距，最後一行品項前（頁尾前）不加
+      if (i < endIdx - 1) {
+        r += INDENT + LF;
+        itemSecLines++;
+      }
+    }
+    // 補空白行至固定 ITEM_ROW_TOTAL，確保各頁等長格式相同
+    for (let j = itemSecLines; j < ITEM_ROW_TOTAL; j++) {
+      r += INDENT + LF;
+    }
+
+    // ── 底部（4行，含2行間距）──
+    r += SEP;                                                             // 頁尾行1
+    if (isLast) {
+      const leftPart  = '經手人：' + handler;
+      const rightPart = '合計：$' + total;
+      const gap = Math.max(1, COL_W - _clen(leftPart) - _clen(rightPart));
+      r += INDENT + leftPart + ' '.repeat(gap) + rightPart + LF;         // 頁尾行2
+    } else {
+      r += ESC + 'a\x01';
+      r += '--- 請翻至下一張 ---' + LF;                                  // 頁尾行2
+      r += ESC + 'a\x00';
+    }
+    r += INDENT + LF;                                                     // 頁尾行3 [間距]
+    r += INDENT + LF;                                                     // 頁尾行4 [間距]
+
+    // ── 物理走紙：用實測 C/T 值精確對齊紙張長度 ──
+    // trail = round((PAPER_TARGET - contentLines×C) / T)
+    // 空白 LF（bare）推紙 T=2.83mm；有字元行推紙 C=4.71mm
+    // 品項區固定 ITEM_ROW_TOTAL 行（含間距），contentLines 永遠相同
+    const contentLines = FIXED_LINES + ITEM_ROW_TOTAL;
+    const pageTRAIL   = Math.max(1, Math.round((PAPER_TARGET_MM - contentLines * C_MM) / T_MM));
+    r += LF.repeat(pageTRAIL);
+    r += GS + 'V\x42\x00';
+
+    fullStr += r;
+  }
+
+  // 轉成 Big5 Uint8Array（臺灣熱感式印表機通常使用 Big5 編碼）
+  const bytes = _encodeBig5(fullStr);
+
+  // 記憶橋接器 URL 和經手人
+  try { localStorage.setItem('hefeng_bridgeUrl', bridgeUrl); } catch(e) {}
+  try { if (handler) localStorage.setItem('hefeng_handler', handler); } catch(e) {}
 
   fetch(bridgeUrl, {
     method: 'POST',
@@ -593,10 +863,16 @@ function sendPrint() {
     body: bytes
   })
   .then(res => {
-    if (res.ok) { savePricesToGAS(); alert('✅ 已送出列印！'); closePrint(); }
-    else res.text().then(t => alert('列印失敗：' + t));
+    if (res.ok) {
+      savePricesToGAS();
+      const msg = numPages > 1 ? '✅ 已送出列印！（共 ' + numPages + ' 張）' : '✅ 已送出列印！';
+      alert(msg);
+      closePrint();
+    } else {
+      res.text().then(t => alert('列印失敗：' + t));
+    }
   })
-  .catch(err => alert('連線失敗，請確認 Galaxy-S10 橋接器已啟動。\n\n' + err));
+  .catch(err => alert('連線失敗，請確認橋接器已啟動。\n\n' + err));
 }
 
 function showStats() {
