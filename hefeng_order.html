@@ -493,7 +493,7 @@ const PRODUCTS = {
 
 // ★ 部署好新的 Apps Script 後，把網址貼在這裡
 const V2_GAS_URL = 'https://script.google.com/macros/s/AKfycbwWggz9BZjz3Y_sioE5wDr0WjNeQh0mTtIWbSJmbacPqWbsreDyt2E7kb8lJg7R_r0M/exec';
-const FRONTEND_VERSION = 'v1.0-合豐行-2026-08-21';
+const FRONTEND_VERSION = 'v1.1-合豐行-2026-09-10';
 
 const LS_CART     = 'hefeng_cart';
 const LS_CUSTOMER = 'hefeng_customer';
@@ -1092,6 +1092,12 @@ function openLine() {
       const editUrl = window.location.origin + window.location.pathname + '?edit=' + orderId;
       msg += '📝 點此修改訂單：\n' + editUrl + '\n';
     }
+    // ★ 清空購物車（下單成功後重置）
+    cart = {};
+    editingOrderId = null;
+    autoSave();
+    renderProducts();
+    updatePanel();
     // ★ 用 location.href 跳轉（手機不會白畫面，LINE app 接管後按返回可回頁面）
     window.location.href = 'https://line.me/R/share?text=' + encodeURIComponent(msg);
     setTimeout(releaseLock, 3000);
