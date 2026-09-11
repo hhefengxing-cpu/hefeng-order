@@ -269,7 +269,7 @@
 <script>
 // ★ 部署好新的 Apps Script 後，把網址貼在這裡（跟 order.html 用同一個）
 const V2_GAS_URL = 'https://script.google.com/macros/s/AKfycbwWggz9BZjz3Y_sioE5wDr0WjNeQh0mTtIWbSJmbacPqWbsreDyt2E7kb8lJg7R_r0M/exec';
-const FRONTEND_VERSION = 'v2.15-合豐行-2026-09-11';
+const FRONTEND_VERSION = 'v2.16-合豐行-2026-09-11';
 
 fetch(V2_GAS_URL + '?action=ping').then(r=>r.json()).then(d=>{
   const el = document.createElement('div');
@@ -310,7 +310,6 @@ function loadDashboard(dateOverride) {
     .then(data => {
       if (data.error === 'unauthorized') { renderLogin('密碼錯誤，請再試一次'); return; }
       sessionStorage.setItem('hefeng_dashboard_pwd', pwd);
-      loadPricesFromGAS();   // 登入後拉取雲端批價
       renderOrders(data.orders || [], date);
     })
     .catch(() => renderLogin('連線失敗，請檢查網路後再試一次'));
@@ -371,7 +370,9 @@ function renderOrders(orders, date) {
       '<div class="order-head" onclick="toggleItems(' + idx + ')">' +
         '<input type="checkbox" class="order-check" onclick="event.stopPropagation();toggleSelect(\'' + o.orderId + '\')">' +
         '<div style="flex:1;"><div class="customer-name">' + escapeHtml(o.customer) + '</div>' +
-        '<div class="meta">建立 ' + o.createdAt + (o.updatedAt !== o.createdAt ? '　最後修改 ' + o.updatedAt : '') + '</div></div>' +
+        '<div class="meta">建立 ' + o.createdAt + (o.updatedAt !== o.createdAt ? '　最後修改 ' + o.updatedAt : '') + '</div>' +
+        (o.printedPrices && o.printedPrices.total > 0 ? '<div class="meta" style="color:#166534;font-weight:600;">💵 批價合計：$' + o.printedPrices.total + '　<span style="font-weight:400;">' + (o.printedPrices.printedAt||'') + '</span></div>' : '') +
+        '</div>' +
         badge +
       '</div>' +
       '<div class="items" id="items' + idx + '">' +
@@ -476,45 +477,28 @@ document.addEventListener('click', function() { closeToolbarMenu(); });
 let currentOrders = [];
 let printOrderIdx = -1;
 
-// ── 批價記憶：同步存在 GAS（跨裝置），localStorage 作快取 ──
-var _gasPrices = {};   // 從 GAS 載入後放在這裡
-var _saveTimer = null; // 防抖動計時器（批價自動存 GAS）
-
-function getSavedPrice(name) {
-  // 優先用 GAS 載入的值，沒有才回退 localStorage
-  if (_gasPrices[name] !== undefined && _gasPrices[name] !== '') return String(_gasPrices[name]);
-  try { return localStorage.getItem('price_' + name) || ''; } catch(e) { return ''; }
+// ── 批價：每筆訂單專屬，存在訂單的 printedPrices 欄位 ──
+// 取得該訂單某品項的已存批價
+function getOrderPrice(orderIdx, itemName) {
+  var o = currentOrders[orderIdx];
+  if (o && o.printedPrices && o.printedPrices.prices && o.printedPrices.prices[itemName] !== undefined) {
+    return String(o.printedPrices.prices[itemName]);
+  }
+  return '';
 }
 
-function savePrice(name, val) {
-  // 同時更新記憶體快取和 localStorage
-  if (val !== '') _gasPrices[name] = val;
-  try { localStorage.setItem('price_' + name, val); } catch(e) {}
-}
-
-function loadPricesFromGAS() {
-  // 登入後呼叫一次，把 GAS 的批價表載到 _gasPrices
-  fetch(V2_GAS_URL + '?action=loadPrices&pwd=' + encodeURIComponent(pwd))
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      if (data.prices) {
-        _gasPrices = data.prices;
-        // 同步回 localStorage，讓離線時也能用
-        Object.keys(_gasPrices).forEach(function(name){
-          try { localStorage.setItem('price_' + name, _gasPrices[name]); } catch(e){}
-        });
-      }
-    })
-    .catch(function(){});  // 失敗就靜默，還是能用 localStorage
-}
-
-function savePricesToGAS() {
-  // 確認批價後呼叫，把最新批價表存到 GAS
+// 把批價存回 GAS 訂單紀錄（同時更新本地 currentOrders）
+function savePrintPricesToOrder(orderIdx, priceMap, total) {
+  var o = currentOrders[orderIdx];
+  var priceData = {prices: priceMap, total: total, printedAt: new Date().toLocaleString('zh-TW')};
+  // 先更新本地，讓卡片立即顯示
+  currentOrders[orderIdx].printedPrices = priceData;
+  // 非同步存回 GAS
   fetch(V2_GAS_URL, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({action: 'savePrices', pwd: pwd, prices: _gasPrices})
-  }).catch(function(){});  // 失敗靜默，至少 localStorage 已存
+    body: JSON.stringify({action: 'savePrintPrices', pwd: pwd, id: o.orderId, prices: priceMap, total: total})
+  }).catch(function(){});
 }
 
 // ★ 自動偵測橋接器 URL
@@ -577,7 +561,6 @@ async function autoFillBridgeUrl() {
 
 function showPrint(idx) {
   printOrderIdx = idx;
-  // 自動偵測橋接器 URL（async，不阻塞 modal 開啟）
   autoFillBridgeUrl();
   try {
     const savedHandler = localStorage.getItem('hefeng_handler');
@@ -588,39 +571,21 @@ function showPrint(idx) {
     '<strong>客戶：</strong>' + escapeHtml(o.customer) +
     '　<strong>送貨日期：</strong>' + escapeHtml(o.deliveryDate || '') +
     (o.notes ? '<br><strong>備註：</strong>' + escapeHtml(o.notes) : '');
-  // 先顯示 loading，modal 立刻開啟
-  document.getElementById('printItems').innerHTML =
-    '<tr><td colspan="5" style="text-align:center;color:#888;padding:20px;">批價載入中…</td></tr>';
-  document.getElementById('printTotal').textContent = '總計：$0';
+  // ★ 直接用該筆訂單已存的批價填入（無需 async，不會跨單污染）
+  let rows = '';
+  (o.items || []).forEach((it, i) => {
+    const saved = getOrderPrice(idx, it.name || '');
+    rows += '<tr>' +
+      '<td>' + escapeHtml(it.name||'') + '</td>' +
+      '<td>' + (it.qty||0) + '</td>' +
+      '<td>' + escapeHtml(it.unit||'') + '</td>' +
+      '<td><input type="number" min="0" step="0.01" value="' + saved + '" id="price_' + i + '" oninput="calcPrintTotal()" /></td>' +
+      '<td id="sub_' + i + '">—</td>' +
+    '</tr>';
+  });
+  document.getElementById('printItems').innerHTML = rows;
+  calcPrintTotal();
   document.getElementById('printOverlay').classList.add('open');
-  // ★ 每次開列印 modal 都重新從 GAS 抓最新批價（確保跨裝置同步）
-  fetch(V2_GAS_URL + '?action=loadPrices&pwd=' + encodeURIComponent(pwd))
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      if (data.prices) {
-        _gasPrices = data.prices;
-        Object.keys(_gasPrices).forEach(function(name){
-          try { localStorage.setItem('price_' + name, _gasPrices[name]); } catch(e){}
-        });
-      }
-    })
-    .catch(function(){})  // 失敗就用 _gasPrices（登入時已載）或 localStorage
-    .finally(function(){
-      // 用最新批價填欄位
-      let rows = '';
-      (o.items || []).forEach(function(it, i){
-        const saved = getSavedPrice(it.name || '');
-        rows += '<tr>' +
-          '<td>' + escapeHtml(it.name||'') + '</td>' +
-          '<td>' + (it.qty||0) + '</td>' +
-          '<td>' + escapeHtml(it.unit||'') + '</td>' +
-          '<td><input type="number" min="0" step="0.01" value="' + saved + '" id="price_' + i + '" oninput="calcPrintTotal()" /></td>' +
-          '<td id="sub_' + i + '">—</td>' +
-        '</tr>';
-      });
-      document.getElementById('printItems').innerHTML = rows;
-      calcPrintTotal();
-    });
 }
 
 function calcPrintTotal() {
@@ -632,22 +597,11 @@ function calcPrintTotal() {
     const sub = price * qty;
     total += sub;
     document.getElementById('sub_' + i).textContent = price ? '$' + sub : '—';
-    // 即時更新快取 + localStorage
-    if (price > 0) savePrice(it.name || '', String(price));
   });
   document.getElementById('printTotal').textContent = '總計：$' + total;
-  // 防抖動：最後一次改價後 2 秒自動存到 GAS（換帳號也不會消失）
-  if (_saveTimer) clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(function() {
-    savePricesToGAS();
-    _saveTimer = null;
-  }, 2000);
 }
 
 function closePrint() {
-  // ★ 關閉前立即把批價存到 GAS（不等 2 秒防抖動）
-  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
-  savePricesToGAS();
   document.getElementById('printOverlay').classList.remove('open');
 }
 
@@ -841,12 +795,13 @@ function sendPrint() {
 
   // ── 先算好每項價格與總計 ──
   let total = 0;
+  const priceMap = {};
   const prices = items.map((it, i) => {
     const priceEl = document.getElementById('price_' + i);
     const price = parseFloat(priceEl ? priceEl.value : 0) || 0;
     const qty = Number(it.qty) || 0;
     total += price * qty;
-    savePrice(it.name || '', String(price));
+    if (price > 0) priceMap[it.name || ''] = String(price);
     return price;
   });
 
@@ -943,10 +898,13 @@ function sendPrint() {
   })
   .then(res => {
     if (res.ok) {
-      savePricesToGAS();
+      // ★ 列印成功 → 把批價與合計存回這筆訂單（GAS 第9欄）
+      savePrintPricesToOrder(printOrderIdx, priceMap, total);
       const msg = numPages > 1 ? '✅ 已送出列印！（共 ' + numPages + ' 張）' : '✅ 已送出列印！';
       alert(msg);
       closePrint();
+      // 重新渲染卡片以顯示批價合計
+      renderOrders(currentOrders, document.getElementById('dateInput') ? document.getElementById('dateInput').value : '');
     } else {
       res.text().then(t => alert('列印失敗：' + t));
     }
@@ -995,9 +953,9 @@ function showBatchPrice() {
   document.getElementById('priceInfo').textContent = '客戶：' + o.customer + '　送貨日期：' + (o.deliveryDate || '');
   let rows = '';
   (o.items || []).forEach((it, i) => {
-    // 優先讀列印表格已輸入的值，其次讀 localStorage
+    // 優先讀列印表格已輸入的值，其次讀該訂單已存批價
     const printEl = document.getElementById('price_' + i);
-    const val = (printEl && printEl.value) ? printEl.value : getSavedPrice(it.name || '');
+    const val = (printEl && printEl.value) ? printEl.value : getOrderPrice(printOrderIdx, it.name || '');
     rows += '<div class="price-row">' +
       '<div class="price-name">' + escapeHtml(it.name || '') + '</div>' +
       '<div class="price-qty">' + it.qty + (it.unit || '') + '</div>' +
@@ -1021,20 +979,27 @@ function closeBatchPrice() {
 
 function applyBatchPrice() {
   const o = currentOrders[printOrderIdx];
+  const priceMap = {};
+  let total = 0;
   (o.items || []).forEach((it, i) => {
     const bpEl = document.getElementById('bp_' + i);
     if (!bpEl) return;
-    savePrice(it.name || '', bpEl.value);  // 一定存 localStorage
+    const val = bpEl.value;
+    const price = parseFloat(val) || 0;
+    if (price > 0) priceMap[it.name || ''] = String(price);
+    // 如果列印 modal 同時開著也同步更新欄位
     const printEl = document.getElementById('price_' + i);
-    if (printEl) {
-      printEl.value = bpEl.value;          // 列印 modal 若開著也同步更新
-    }
+    if (printEl) printEl.value = val;
+    total += price * (Number(it.qty) || 0);
   });
   if (document.getElementById('printOverlay').classList.contains('open')) {
     calcPrintTotal();
   }
-  savePricesToGAS();   // 存到 GAS，下次換手機也能讀到
+  // ★ 批價確認後立即存回這筆訂單（GAS + 本地）
+  savePrintPricesToOrder(printOrderIdx, priceMap, total);
   closeBatchPrice();
+  // 重新渲染以顯示批價合計
+  renderOrders(currentOrders, document.getElementById('dateInput') ? document.getElementById('dateInput').value : '');
 }
 
 function showOverview() {
