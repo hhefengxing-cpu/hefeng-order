@@ -269,7 +269,7 @@
 <script>
 // ★ 部署好新的 Apps Script 後，把網址貼在這裡（跟 order.html 用同一個）
 const V2_GAS_URL = 'https://script.google.com/macros/s/AKfycbwWggz9BZjz3Y_sioE5wDr0WjNeQh0mTtIWbSJmbacPqWbsreDyt2E7kb8lJg7R_r0M/exec';
-const FRONTEND_VERSION = 'v2.16-合豐行-2026-09-11';
+const FRONTEND_VERSION = 'v2.17-合豐行-2026-09-11';
 
 fetch(V2_GAS_URL + '?action=ping').then(r=>r.json()).then(d=>{
   const el = document.createElement('div');
@@ -493,12 +493,13 @@ function savePrintPricesToOrder(orderIdx, priceMap, total) {
   var priceData = {prices: priceMap, total: total, printedAt: new Date().toLocaleString('zh-TW')};
   // 先更新本地，讓卡片立即顯示
   currentOrders[orderIdx].printedPrices = priceData;
-  // 非同步存回 GAS
+  // 非同步存回 GAS（注意：不能加 Content-Type: application/json，否則觸發 CORS 預檢導致 POST 被封鎖）
   fetch(V2_GAS_URL, {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action: 'savePrintPrices', pwd: pwd, id: o.orderId, prices: priceMap, total: total})
-  }).catch(function(){});
+  }).then(function(r){ return r.json(); }).then(function(d){
+    if (d.error) alert('⚠️ 批價儲存失敗：' + d.error + '\n請截圖回報。');
+  }).catch(function(err){ alert('⚠️ 批價無法儲存到雲端：' + err + '\n請確認網路連線後再試。'); });
 }
 
 // ★ 自動偵測橋接器 URL
