@@ -269,7 +269,7 @@
 <script>
 // ★ 部署好新的 Apps Script 後，把網址貼在這裡（跟 order.html 用同一個）
 const V2_GAS_URL = 'https://script.google.com/macros/s/AKfycbwWggz9BZjz3Y_sioE5wDr0WjNeQh0mTtIWbSJmbacPqWbsreDyt2E7kb8lJg7R_r0M/exec';
-const FRONTEND_VERSION = 'v2.14-合豐行-2026-09-11';
+const FRONTEND_VERSION = 'v2.15-合豐行-2026-09-11';
 
 fetch(V2_GAS_URL + '?action=ping').then(r=>r.json()).then(d=>{
   const el = document.createElement('div');
@@ -588,20 +588,39 @@ function showPrint(idx) {
     '<strong>客戶：</strong>' + escapeHtml(o.customer) +
     '　<strong>送貨日期：</strong>' + escapeHtml(o.deliveryDate || '') +
     (o.notes ? '<br><strong>備註：</strong>' + escapeHtml(o.notes) : '');
-  let rows = '';
-  (o.items || []).forEach((it, i) => {
-    const saved = getSavedPrice(it.name || '');
-    rows += '<tr>' +
-      '<td>' + escapeHtml(it.name||'') + '</td>' +
-      '<td>' + (it.qty||0) + '</td>' +
-      '<td>' + escapeHtml(it.unit||'') + '</td>' +
-      '<td><input type="number" min="0" step="0.01" value="' + saved + '" id="price_' + i + '" oninput="calcPrintTotal()" /></td>' +
-      '<td id="sub_' + i + '">—</td>' +
-    '</tr>';
-  });
-  document.getElementById('printItems').innerHTML = rows;
-  calcPrintTotal();
+  // 先顯示 loading，modal 立刻開啟
+  document.getElementById('printItems').innerHTML =
+    '<tr><td colspan="5" style="text-align:center;color:#888;padding:20px;">批價載入中…</td></tr>';
+  document.getElementById('printTotal').textContent = '總計：$0';
   document.getElementById('printOverlay').classList.add('open');
+  // ★ 每次開列印 modal 都重新從 GAS 抓最新批價（確保跨裝置同步）
+  fetch(V2_GAS_URL + '?action=loadPrices&pwd=' + encodeURIComponent(pwd))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (data.prices) {
+        _gasPrices = data.prices;
+        Object.keys(_gasPrices).forEach(function(name){
+          try { localStorage.setItem('price_' + name, _gasPrices[name]); } catch(e){}
+        });
+      }
+    })
+    .catch(function(){})  // 失敗就用 _gasPrices（登入時已載）或 localStorage
+    .finally(function(){
+      // 用最新批價填欄位
+      let rows = '';
+      (o.items || []).forEach(function(it, i){
+        const saved = getSavedPrice(it.name || '');
+        rows += '<tr>' +
+          '<td>' + escapeHtml(it.name||'') + '</td>' +
+          '<td>' + (it.qty||0) + '</td>' +
+          '<td>' + escapeHtml(it.unit||'') + '</td>' +
+          '<td><input type="number" min="0" step="0.01" value="' + saved + '" id="price_' + i + '" oninput="calcPrintTotal()" /></td>' +
+          '<td id="sub_' + i + '">—</td>' +
+        '</tr>';
+      });
+      document.getElementById('printItems').innerHTML = rows;
+      calcPrintTotal();
+    });
 }
 
 function calcPrintTotal() {
