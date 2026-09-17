@@ -65,6 +65,10 @@
   .qty-input:focus { border-color: var(--green); }
   .qty-input::-webkit-inner-spin-button, .qty-input::-webkit-outer-spin-button { -webkit-appearance: none; }
   .qty-input[type=number] { -moz-appearance: textfield; }
+  /* ★ iOS 防止 auto-zoom：所有 input/select 字體至少 16px */
+  @supports (-webkit-touch-callout: none) {
+    input, select, textarea { font-size: 16px !important; }
+  }
   .unit-select { font-size: 11px; border: 1px solid var(--border); border-radius: 6px; padding: 2px 4px; font-family: inherit; color: var(--text-muted); background: white; cursor: pointer; margin-top: 4px; width: 100%; display: block; }
   .qty-badge { position: absolute; top: 6px; right: 6px; background: var(--accent); color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; font-weight: 700; display: none; align-items: center; justify-content: center; }
   .has-qty .qty-badge { display: flex; }
