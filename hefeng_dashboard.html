@@ -900,6 +900,9 @@ function savePMgmt() {
   .then(data => {
     if (data.ok) {
       localStorage.setItem('hf_dash_products', JSON.stringify(pmgmtProducts));
+      // 同步寫入下單程式的 key，讓開著下單程式的分頁自動更新
+      localStorage.setItem('hefeng_products', JSON.stringify(pmgmtProducts));
+      localStorage.setItem('hefeng_products_ts', Date.now().toString());
       closePMgmt();
       showMsg('✅ 品項已儲存到雲端（共 ' + (data.count||0) + ' 項）');
       // 自動開啟品項總覽以確認結果

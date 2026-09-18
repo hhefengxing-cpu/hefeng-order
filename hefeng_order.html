@@ -1154,7 +1154,7 @@ function getAllProductNames() {
   return map;
 }
 
-function loadRuntimeProducts() {
+function loadRuntimeProducts(silent) {
   // 先從 GAS 載入品項（後台維護的品項表）
   // 若 GAS 品項表是空的（fromSheets:false），繼續用本地 PRODUCTS 常數
   if (!V2_GAS_URL || V2_GAS_URL.indexOf('YOUR_GAS') !== -1) return;
@@ -1165,10 +1165,28 @@ function loadRuntimeProducts() {
       if (data.fromSheets && data.products && Object.keys(data.products).length > 0) {
         localStorage.setItem(LS_PRODUCTS, JSON.stringify(data.products));
         buildTabs(); renderProducts();
+        if (!silent) showToast('🔄 品項已同步更新');
       }
     })
     .catch(() => {}); // 載入失敗靜默，繼續用本地預設
 }
+
+// ── 品項自動同步 ──────────────────────────────────────
+// 1) 監聽 storage 事件：儀表板在另一分頁儲存品項時立即更新
+window.addEventListener('storage', function(e) {
+  if (e.key === 'hefeng_products' && e.newValue) {
+    try {
+      const products = JSON.parse(e.newValue);
+      if (products && Object.keys(products).length > 0) {
+        localStorage.setItem(LS_PRODUCTS, e.newValue);
+        buildTabs(); renderProducts();
+        showToast('🔄 品項已由後台更新');
+      }
+    } catch(err) {}
+  }
+});
+// 2) 每 10 分鐘從 GAS 重新拉一次（客戶長時間開著頁面的備援）
+setInterval(function() { loadRuntimeProducts(true); }, 10 * 60 * 1000);
 
 // ── 新增品項功能 ──────────────────────────────────
 let pendingNewItems = [];
