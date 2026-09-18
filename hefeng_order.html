@@ -1077,25 +1077,25 @@ function openLine() {
   if (!customer) { alert('請先填入客戶名稱'); releaseLock(); return; }
   if (!items.length) { alert('購物車是空的，請先加入品項'); releaseLock(); return; }
 
-  // ★ 送出前即時防重複：不論頁面何時開啟都查一次
+  // ★ 送出前防重複：最多等 4 秒，超時就直接送，不讓客戶乾等
   if (!editingOrderId && V2_GAS_URL) {
-    fetch(V2_GAS_URL + '?action=check&customer=' + encodeURIComponent(customer) + '&date=' + encodeURIComponent(deliveryDate))
-      .then(r => r.json())
+    const checkPromise = fetch(V2_GAS_URL + '?action=check&customer=' + encodeURIComponent(customer) + '&date=' + encodeURIComponent(deliveryDate))
+      .then(r => r.json());
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({_timeout: true}), 4000));
+    Promise.race([checkPromise, timeoutPromise])
       .then(data => {
-        if (data.exists && data.editable) {
-          // 已有訂單，先解鎖讓 askContinueOrNew 能重新操作
+        if (!data._timeout && data.exists && data.editable) {
+          // 在 4 秒內確認有重複訂單，跳出確認視窗
           releaseLock();
           askContinueOrNew(data.orderId, data.items, customer, deliveryDate, (choice) => {
-            if (choice === 'continue') openLine(); // 現在 editingOrderId 已設定，會走更新流程
+            if (choice === 'continue') openLine();
           }, data.history);
         } else {
+          // 無重複 or 超時 → 直接送出
           doSendLine(customer, orderDate, deliveryDate, items, btn, releaseLock);
         }
       })
-      .catch(() => {
-        // 查不到就直接送，不因網路問題阻擋客戶
-        doSendLine(customer, orderDate, deliveryDate, items, btn, releaseLock);
-      });
+      .catch(() => doSendLine(customer, orderDate, deliveryDate, items, btn, releaseLock));
     return;
   }
 

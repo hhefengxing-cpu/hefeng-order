@@ -1450,9 +1450,8 @@ function showBatchPrice() {
   document.getElementById('priceInfo').textContent = '客戶：' + o.customer + '　送貨日期：' + (o.deliveryDate || '');
   let rows = '';
   (o.items || []).forEach((it, i) => {
-    // 優先讀列印表格已輸入的值，其次讀該訂單已存批價
-    const printEl = document.getElementById('price_' + i);
-    const val = (printEl && printEl.value) ? printEl.value : getOrderPrice(printOrderIdx, it.name || '');
+    // ★ 只讀該訂單本身存的批價，不讀其他客戶的 DOM 元素（防跨單污染）
+    const val = getOrderPrice(printOrderIdx, it.name || '');
     rows += '<div class="price-row">' +
       '<div class="price-name">' + escapeHtml(it.name || '') + '</div>' +
       '<div class="price-qty">' + it.qty + (it.unit || '') + '</div>' +
