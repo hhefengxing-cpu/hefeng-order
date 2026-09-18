@@ -158,12 +158,114 @@
   .price-input:focus { outline:none; border-color:#0d6efd; }
   .price-confirm { display:block; width:100%; margin-top:16px; padding:12px; background:#0d6efd; color:white; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; flex-shrink:0; }
   .price-info { background:#f0f7ff; border-radius:8px; padding:8px 12px; font-size:13px; color:#1e40af; margin-bottom:12px; }
+  /* 編輯訂單 modal */
+  .edit-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:500; align-items:center; justify-content:center; }
+  .edit-overlay.open { display:flex; }
+  .edit-box { background:white; border-radius:16px; width:92%; max-width:480px; max-height:90vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.22); }
+  .edit-header { background:#7c3aed; color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+  .edit-header h2 { margin:0; font-size:16px; }
+  .edit-close { background:none; border:none; color:white; font-size:22px; cursor:pointer; padding:0 4px; }
+  .edit-body { overflow-y:auto; padding:16px; flex:1; min-height:0; }
+  .edit-section { font-size:13px; font-weight:700; color:#7c3aed; margin:14px 0 8px; border-bottom:1.5px solid #ede9fe; padding-bottom:4px; }
+  .edit-item-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid #f5f3ff; }
+  .edit-item-name { flex:1; font-size:14px; font-weight:500; }
+  .edit-item-qty { width:70px; border:1.5px solid #c4b5fd; border-radius:7px; padding:5px 8px; font-size:14px; text-align:center; }
+  .edit-item-del { background:none; border:none; color:#c0392b; font-size:18px; cursor:pointer; padding:2px 4px; }
+  .edit-add-row { display:flex; gap:8px; margin-top:10px; align-items:center; }
+  .edit-add-select { flex:1; border:1.5px solid #c4b5fd; border-radius:8px; padding:7px 10px; font-size:14px; font-family:inherit; }
+  .edit-add-qty { width:70px; border:1.5px solid #c4b5fd; border-radius:8px; padding:7px 8px; font-size:14px; text-align:center; }
+  .edit-footer { padding:14px 16px; border-top:1px solid #ede9fe; display:flex; gap:8px; flex-shrink:0; }
+  .edit-save { flex:1; background:#7c3aed; color:white; border:none; border-radius:10px; padding:11px; font-size:14px; font-weight:700; cursor:pointer; }
+  .edit-cancel { background:white; color:#7c3aed; border:2px solid #c4b5fd; border-radius:10px; padding:11px 18px; font-size:14px; font-weight:700; cursor:pointer; }
+  /* 品項管理 modal */
+  .pmgmt-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:500; align-items:center; justify-content:center; }
+  .pmgmt-overlay.open { display:flex; }
+  .pmgmt-box { background:white; border-radius:16px; width:96%; max-width:540px; max-height:92vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.22); }
+  .pmgmt-header { background:#0369a1; color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+  .pmgmt-header h2 { margin:0; font-size:16px; }
+  .pmgmt-close { background:none; border:none; color:white; font-size:22px; cursor:pointer; padding:0 4px; }
+  .pmgmt-body { overflow-y:auto; padding:16px; flex:1; min-height:0; }
+  .pmgmt-cat { font-size:13px; font-weight:700; color:#0369a1; margin:14px 0 6px; border-bottom:2px solid #bae6fd; padding-bottom:3px; }
+  .pmgmt-item-row { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f0f9ff; }
+  .pmgmt-item-name { flex:1; font-size:14px; }
+  .pmgmt-item-unit { font-size:12px; color:#888; flex:0 0 80px; }
+  .pmgmt-item-del { background:none; border:none; color:#c0392b; font-size:16px; cursor:pointer; }
+  .pmgmt-add-row { display:flex; gap:6px; margin-top:12px; flex-wrap:wrap; }
+  .pmgmt-add-row input, .pmgmt-add-row select { border:1.5px solid #bae6fd; border-radius:8px; padding:7px 10px; font-size:13px; font-family:inherit; }
+  .pmgmt-add-btn { background:#0369a1; color:white; border:none; border-radius:8px; padding:7px 16px; font-size:13px; font-weight:700; cursor:pointer; }
+  .pmgmt-footer { padding:14px 16px; border-top:1px solid #bae6fd; display:flex; gap:8px; flex-shrink:0; }
+  .pmgmt-save { flex:1; background:#0369a1; color:white; border:none; border-radius:10px; padding:11px; font-size:14px; font-weight:700; cursor:pointer; }
+  .alias-tag { font-size:12px; color:#7c3aed; background:#f5f3ff; border-radius:6px; padding:2px 7px; margin-left:6px; font-weight:500; }
 </style>
 </head>
 <body>
 
 <div class="top"><h1>📦 合豐行 — 訂單儀表板</h1></div>
 <div class="container" id="app"></div>
+
+<!-- 編輯訂單 Modal -->
+<div class="edit-overlay" id="editOverlay" onclick="if(event.target===this)closeEditOrder()">
+  <div class="edit-box">
+    <div class="edit-header">
+      <h2>✏️ 編輯訂單</h2>
+      <button class="edit-close" onclick="closeEditOrder()">×</button>
+    </div>
+    <div class="edit-body">
+      <div class="edit-section">客戶資訊</div>
+      <div style="font-size:13px;color:#555;margin-bottom:6px;">客戶名稱：<strong id="editCustomerName"></strong></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <label style="font-size:13px;color:#555;white-space:nowrap;">客戶別稱：</label>
+        <input id="editAlias" type="text" placeholder="輸入別稱（選填，列印時優先使用）"
+          style="flex:1;border:1.5px solid #c4b5fd;border-radius:8px;padding:7px 10px;font-size:14px;font-family:inherit;outline:none;">
+      </div>
+      <div class="edit-section">訂單品項</div>
+      <div id="editItemList"></div>
+      <div class="edit-section">新增品項</div>
+      <div class="edit-add-row">
+        <select id="editAddSelect" class="edit-add-select">
+          <option value="">— 選擇品項 —</option>
+        </select>
+        <input id="editAddQty" type="number" class="edit-add-qty" placeholder="數量" value="1" min="0.5" step="0.5">
+        <select id="editAddUnit" class="edit-add-select" style="flex:0 0 70px;"></select>
+        <button onclick="editAddItem()" style="background:#7c3aed;color:white;border:none;border-radius:8px;padding:7px 14px;font-size:14px;font-weight:700;cursor:pointer;">＋</button>
+      </div>
+    </div>
+    <div class="edit-footer">
+      <button class="edit-cancel" onclick="closeEditOrder()">取消</button>
+      <button class="edit-save" onclick="saveEditOrder()">💾 儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 品項管理 Modal -->
+<div class="pmgmt-overlay" id="pmgmtOverlay" onclick="if(event.target===this)closePMgmt()">
+  <div class="pmgmt-box">
+    <div class="pmgmt-header">
+      <h2>🥬 品項管理</h2>
+      <button class="pmgmt-close" onclick="closePMgmt()">×</button>
+    </div>
+    <div class="pmgmt-body">
+      <div style="background:#e0f2fe;border-radius:8px;padding:10px 14px;font-size:13px;color:#0369a1;margin-bottom:12px;line-height:1.7;">
+        新增、修改、刪除品項後按「儲存到雲端」，下單程式下次開啟時會自動更新。
+      </div>
+      <div class="pmgmt-section">新增品項</div>
+      <div class="pmgmt-add-row">
+        <select id="pmgmtNewCat" style="flex:0 0 100px;">
+          <option value="">— 分類 —</option>
+        </select>
+        <input type="text" id="pmgmtNewCatInput" placeholder="或輸入新分類" style="flex:0 0 110px;">
+        <input type="text" id="pmgmtNewName" placeholder="品項名稱" style="flex:1;">
+        <input type="text" id="pmgmtNewUnits" placeholder="單位（件、箱）" style="flex:0 0 130px;">
+        <button class="pmgmt-add-btn" onclick="pmgmtAddItem()">＋ 新增</button>
+      </div>
+      <div id="pmgmtList" style="margin-top:12px;"></div>
+    </div>
+    <div class="pmgmt-footer">
+      <button onclick="closePMgmt()" style="background:white;color:#0369a1;border:2px solid #bae6fd;border-radius:10px;padding:11px 18px;font-size:14px;font-weight:700;cursor:pointer;">取消</button>
+      <button class="pmgmt-save" onclick="savePMgmt()">☁️ 儲存到雲端</button>
+    </div>
+  </div>
+</div>
 
 <!-- 品項統計 Modal -->
 <div class="stats-overlay" id="statsOverlay" onclick="if(event.target===this)closeStats()">
@@ -333,6 +435,7 @@ function renderOrders(orders, date) {
         '<button onclick="closeToolbarMenu();showStats()">📊 品項統計</button>' +
         '<button onclick="closeToolbarMenu();exportExcel(event)">📥 匯出Excel</button>' +
         '<button onclick="closeToolbarMenu();showOverview()">📅 各日總覽</button>' +
+        '<button onclick="closeToolbarMenu();openPMgmt()">🥬 品項管理</button>' +
         '<button class="menu-danger" onclick="closeToolbarMenu();showDeleteDay()">🗑️ 刪除當天全部</button>' +
         '<button onclick="closeToolbarMenu();showChangePwd()">🔑 修改密碼</button>' +
       '</div>' +
@@ -373,7 +476,7 @@ function renderOrders(orders, date) {
     html += '<div class="order-card">' +
       '<div class="order-head" onclick="toggleItems(' + idx + ')">' +
         '<input type="checkbox" class="order-check" onclick="event.stopPropagation();toggleSelect(\'' + o.orderId + '\')">' +
-        '<div style="flex:1;"><div class="customer-name">' + escapeHtml(o.customer) + '</div>' +
+        '<div style="flex:1;"><div class="customer-name">' + escapeHtml(o.customer) + (o.customerAlias ? '<span class="alias-tag">別稱：' + escapeHtml(o.customerAlias) + '</span>' : '') + '</div>' +
         '<div class="meta">建立 ' + o.createdAt + (o.updatedAt !== o.createdAt ? '　最後修改 ' + o.updatedAt : '') + '</div>' +
         (o.printedPrices && o.printedPrices.total > 0 ? '<div class="meta" style="color:#166534;font-weight:600;">💵 批價合計：$' + o.printedPrices.total + '　<span style="font-weight:400;">' + (o.printedPrices.printedAt||'') + '</span></div>' : '') +
         '</div>' +
@@ -386,6 +489,7 @@ function renderOrders(orders, date) {
         '<div style="display:flex;gap:8px;margin-top:6px;">' +
           '<button class="delete-btn" style="flex:1;background:#f0fdf4;color:#166534;border-color:#86efac;margin-top:0;" onclick="event.stopPropagation();showPrint(' + idx + ')">🖨️ 列印送貨單</button>' +
           '<button class="delete-btn" style="flex:0 0 auto;width:auto;padding:8px 16px;background:#e8f0fe;color:#1e40af;border-color:#93c5fd;margin-top:0;" onclick="event.stopPropagation();showBatchPriceFromCard(' + idx + ')">💰 批價</button>' +
+          '<button class="delete-btn" style="flex:0 0 auto;width:auto;padding:8px 16px;background:#f5f3ff;color:#7c3aed;border-color:#c4b5fd;margin-top:0;" onclick="event.stopPropagation();openEditOrder(' + idx + ')">✏️ 編輯</button>' +
         '</div>' +
         '<button class="delete-btn" onclick="event.stopPropagation();deleteOrder(\'' + o.orderId + '\',\'' + escapeHtml(o.customer).replace(/'/g,"\\'") + '\')">🗑️ 刪除這筆訂單（測試用，正式資料請用「取消」）</button>' +
       '</div>' +
@@ -465,6 +569,239 @@ function toggleItems(idx) {
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function showMsg(msg) {
+  let t = document.getElementById('dashToast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'dashToast';
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e40af;color:white;padding:10px 22px;border-radius:20px;font-size:14px;font-weight:600;z-index:9999;opacity:0;transition:opacity 0.3s;white-space:nowrap;';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._t);
+  t._t = setTimeout(() => { t.style.opacity = '0'; }, 2500);
+}
+
+// ── 編輯訂單 ─────────────────────────────────────────
+let editOrderIdx = -1;
+let editItems = [];
+
+function openEditOrder(idx) {
+  editOrderIdx = idx;
+  const o = currentOrders[idx];
+  editItems = JSON.parse(JSON.stringify(o.items || []));
+  document.getElementById('editCustomerName').textContent = o.customer;
+  document.getElementById('editAlias').value = o.customerAlias || '';
+  renderEditItems();
+  // 載入品項下拉選單
+  loadProductsForEditSelect();
+  document.getElementById('editOverlay').classList.add('open');
+}
+
+function closeEditOrder() {
+  document.getElementById('editOverlay').classList.remove('open');
+}
+
+function renderEditItems() {
+  const list = document.getElementById('editItemList');
+  if (!editItems.length) { list.innerHTML = '<div style="padding:8px 0;font-size:13px;color:#aaa;">尚無品項</div>'; return; }
+  list.innerHTML = editItems.map((it, i) =>
+    `<div class="edit-item-row">
+      <span class="edit-item-name">${escapeHtml(it.name)}</span>
+      <input type="number" class="edit-item-qty" value="${it.qty}" min="0.5" step="0.5"
+        onchange="editItems[${i}].qty=parseFloat(this.value)||1">
+      <span style="font-size:13px;color:#888;">${escapeHtml(it.unit||'')}</span>
+      <button class="edit-item-del" onclick="editItems.splice(${i},1);renderEditItems()">✕</button>
+    </div>`
+  ).join('');
+}
+
+function loadProductsForEditSelect() {
+  // 從 localStorage 或 GAS 取得品項清單來填 select
+  const sel = document.getElementById('editAddSelect');
+  const unitSel = document.getElementById('editAddUnit');
+  let products = {};
+  try { products = JSON.parse(localStorage.getItem('hf_dash_products') || '{}'); } catch(e) {}
+  // 如果沒有，嘗試從 GAS 取得
+  if (!Object.keys(products).length && V2_GAS_URL) {
+    fetch(V2_GAS_URL + '?action=getProducts&pwd=' + encodeURIComponent(pwd||''))
+      .then(r => r.json())
+      .then(data => {
+        if (data.products && Object.keys(data.products).length) {
+          localStorage.setItem('hf_dash_products', JSON.stringify(data.products));
+          fillEditSelect(data.products);
+        }
+      }).catch(()=>{});
+    return;
+  }
+  fillEditSelect(products);
+}
+
+function fillEditSelect(products) {
+  const sel = document.getElementById('editAddSelect');
+  const unitSel = document.getElementById('editAddUnit');
+  sel.innerHTML = '<option value="">— 選擇品項 —</option>';
+  for (const cat in products) {
+    const og = document.createElement('optgroup');
+    og.label = cat;
+    (products[cat] || []).forEach(item => {
+      const opt = document.createElement('option');
+      opt.value = item[0];
+      opt.dataset.units = JSON.stringify(Array.isArray(item[1]) ? item[1] : [item[1]]);
+      opt.textContent = item[0];
+      og.appendChild(opt);
+    });
+    sel.appendChild(og);
+  }
+  sel.onchange = function() {
+    const opt = sel.options[sel.selectedIndex];
+    const units = opt && opt.dataset.units ? JSON.parse(opt.dataset.units) : ['件'];
+    unitSel.innerHTML = units.map(u => `<option value="${u}">${u}</option>`).join('');
+  };
+}
+
+function editAddItem() {
+  const sel = document.getElementById('editAddSelect');
+  const name = sel.value;
+  if (!name) { alert('請先選擇品項'); return; }
+  const qty = parseFloat(document.getElementById('editAddQty').value) || 1;
+  const unit = document.getElementById('editAddUnit').value || '件';
+  const existing = editItems.find(it => it.name === name);
+  if (existing) { existing.qty += qty; }
+  else { editItems.push({name, qty, unit}); }
+  renderEditItems();
+  sel.value = '';
+}
+
+function saveEditOrder() {
+  const o = currentOrders[editOrderIdx];
+  const alias = document.getElementById('editAlias').value.trim();
+  const btn = document.querySelector('.edit-save');
+  btn.disabled = true; btn.textContent = '儲存中...';
+  fetch(V2_GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify({action:'editOrder', id: o.orderId, customerAlias: alias, items: editItems, pwd: pwd||''})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      // 更新本地資料
+      currentOrders[editOrderIdx].customerAlias = alias;
+      currentOrders[editOrderIdx].items = editItems;
+      closeEditOrder();
+      renderOrders(currentOrders, document.getElementById('dateInput') ? document.getElementById('dateInput').value : '');
+      showMsg('✅ 訂單已更新');
+    } else {
+      alert('儲存失敗：' + (data.error||'未知錯誤'));
+    }
+  })
+  .catch(e => alert('網路錯誤：' + e.message))
+  .finally(() => { btn.disabled = false; btn.textContent = '💾 儲存'; });
+}
+
+// ── 品項管理 ─────────────────────────────────────────
+let pmgmtProducts = {};
+
+function openPMgmt() {
+  pmgmtProducts = {};
+  // 先嘗試從 GAS 載入
+  if (V2_GAS_URL) {
+    fetch(V2_GAS_URL + '?action=getProducts&pwd=' + encodeURIComponent(pwd||''))
+      .then(r => r.json())
+      .then(data => {
+        if (data.fromSheets && data.products && Object.keys(data.products).length) {
+          pmgmtProducts = JSON.parse(JSON.stringify(data.products));
+        } else {
+          try { pmgmtProducts = JSON.parse(localStorage.getItem('hf_dash_products') || '{}'); } catch(e) {}
+        }
+        renderPMgmt();
+      })
+      .catch(() => {
+        try { pmgmtProducts = JSON.parse(localStorage.getItem('hf_dash_products') || '{}'); } catch(e) {}
+        renderPMgmt();
+      });
+  }
+  // 更新分類下拉
+  setTimeout(() => {
+    const catSel = document.getElementById('pmgmtNewCat');
+    if (catSel && Object.keys(pmgmtProducts).length) {
+      catSel.innerHTML = '<option value="">— 分類 —</option>' +
+        Object.keys(pmgmtProducts).map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+  }, 600);
+  document.getElementById('pmgmtOverlay').classList.add('open');
+}
+
+function closePMgmt() {
+  document.getElementById('pmgmtOverlay').classList.remove('open');
+}
+
+function renderPMgmt() {
+  const catSel = document.getElementById('pmgmtNewCat');
+  catSel.innerHTML = '<option value="">— 分類 —</option>' +
+    Object.keys(pmgmtProducts).map(c => `<option value="${c}">${c}</option>`).join('');
+
+  let html = '';
+  for (const cat in pmgmtProducts) {
+    html += `<div class="pmgmt-cat">${escapeHtml(cat)}</div>`;
+    (pmgmtProducts[cat] || []).forEach((item, i) => {
+      const units = Array.isArray(item[1]) ? item[1].join('、') : String(item[1] || '件');
+      html += `<div class="pmgmt-item-row">
+        <span class="pmgmt-item-name">${escapeHtml(item[0])}</span>
+        <span class="pmgmt-item-unit">${escapeHtml(units)}</span>
+        <button class="pmgmt-item-del" onclick="pmgmtDeleteItem('${escapeHtml(cat)}',${i})">🗑️</button>
+      </div>`;
+    });
+  }
+  document.getElementById('pmgmtList').innerHTML = html || '<div style="padding:16px;text-align:center;color:#aaa;font-size:13px;">品項清單為空，請新增品項或從下單程式匯入</div>';
+}
+
+function pmgmtAddItem() {
+  let cat = document.getElementById('pmgmtNewCat').value;
+  const catInput = document.getElementById('pmgmtNewCatInput').value.trim();
+  if (catInput) cat = catInput;
+  const name = document.getElementById('pmgmtNewName').value.trim();
+  const unitsStr = document.getElementById('pmgmtNewUnits').value.trim();
+  if (!cat || !name) { alert('請填寫分類和品項名稱'); return; }
+  const units = unitsStr ? unitsStr.split(/[、,，]/).map(u=>u.trim()).filter(Boolean) : ['件'];
+  if (!pmgmtProducts[cat]) pmgmtProducts[cat] = [];
+  pmgmtProducts[cat].push([name, units]);
+  document.getElementById('pmgmtNewName').value = '';
+  document.getElementById('pmgmtNewUnits').value = '';
+  document.getElementById('pmgmtNewCatInput').value = '';
+  renderPMgmt();
+}
+
+function pmgmtDeleteItem(cat, idx) {
+  if (!confirm('確定刪除「' + (pmgmtProducts[cat][idx]||['?'])[0] + '」？')) return;
+  pmgmtProducts[cat].splice(idx, 1);
+  if (!pmgmtProducts[cat].length) delete pmgmtProducts[cat];
+  renderPMgmt();
+}
+
+function savePMgmt() {
+  if (!V2_GAS_URL) { alert('GAS URL 未設定'); return; }
+  const btn = document.querySelector('.pmgmt-save');
+  btn.disabled = true; btn.textContent = '儲存中...';
+  fetch(V2_GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify({action:'saveProducts', products: pmgmtProducts, pwd: pwd||''})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      localStorage.setItem('hf_dash_products', JSON.stringify(pmgmtProducts));
+      closePMgmt();
+      showMsg('✅ 品項已儲存到雲端（共 ' + (data.count||0) + ' 項）');
+    } else {
+      alert('儲存失敗：' + (data.error||'未知錯誤'));
+    }
+  })
+  .catch(e => alert('網路錯誤：' + e.message))
+  .finally(() => { btn.disabled = false; btn.textContent = '☁️ 儲存到雲端'; });
 }
 
 function toggleToolbarMenu(e) {
