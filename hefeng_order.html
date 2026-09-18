@@ -1059,7 +1059,7 @@ function openOrderModal() {
 
 // ── LINE 傳送 ─────────────────────────────────────
 function openLine() {
-  // 防止重複點擊（同舊版邏輯）
+  // 防止重複點擊
   if (window._isSendingOrder) return;
   window._isSendingOrder = true;
 
@@ -1077,6 +1077,32 @@ function openLine() {
   if (!customer) { alert('請先填入客戶名稱'); releaseLock(); return; }
   if (!items.length) { alert('購物車是空的，請先加入品項'); releaseLock(); return; }
 
+  // ★ 送出前即時防重複：不論頁面何時開啟都查一次
+  if (!editingOrderId && V2_GAS_URL) {
+    fetch(V2_GAS_URL + '?action=check&customer=' + encodeURIComponent(customer) + '&date=' + encodeURIComponent(deliveryDate))
+      .then(r => r.json())
+      .then(data => {
+        if (data.exists && data.editable) {
+          // 已有訂單，先解鎖讓 askContinueOrNew 能重新操作
+          releaseLock();
+          askContinueOrNew(data.orderId, data.items, customer, deliveryDate, (choice) => {
+            if (choice === 'continue') openLine(); // 現在 editingOrderId 已設定，會走更新流程
+          }, data.history);
+        } else {
+          doSendLine(customer, orderDate, deliveryDate, items, btn, releaseLock);
+        }
+      })
+      .catch(() => {
+        // 查不到就直接送，不因網路問題阻擋客戶
+        doSendLine(customer, orderDate, deliveryDate, items, btn, releaseLock);
+      });
+    return;
+  }
+
+  doSendLine(customer, orderDate, deliveryDate, items, btn, releaseLock);
+}
+
+function doSendLine(customer, orderDate, deliveryDate, items, btn, releaseLock) {
   if (btn) btn.textContent = '⏳ 傳送中...';
 
   submitToBackend(customer, orderDate, deliveryDate, items, (orderId) => {
@@ -1102,10 +1128,42 @@ function openLine() {
     autoSave();
     renderProducts();
     updatePanel();
-    // ★ 用 location.href 跳轉（手機不會白畫面，LINE app 接管後按返回可回頁面）
+    // ★ 顯示送出成功畫面，防止客戶以為失敗而重複下單
+    showOrderSuccessBanner(customer, deliveryDate, items.length, orderId);
+    // ★ 用 location.href 跳轉
     window.location.href = 'https://line.me/R/share?text=' + encodeURIComponent(msg);
     setTimeout(releaseLock, 3000);
   });
+}
+
+function showOrderSuccessBanner(customer, deliveryDate, itemCount, orderId) {
+  // 若已有成功畫面就不重複顯示
+  if (document.getElementById('orderSuccessOverlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'orderSuccessOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const editLink = orderId
+    ? `<a href="${window.location.origin + window.location.pathname}?edit=${orderId}"
+         style="display:block;margin-top:12px;color:#1e40af;font-size:13px;text-decoration:underline;">
+         📝 點此修改這張訂單
+       </a>` : '';
+  overlay.innerHTML =
+    `<div style="background:white;border-radius:20px;padding:28px 24px;max-width:340px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.25);">
+      <div style="font-size:48px;margin-bottom:8px;">✅</div>
+      <div style="font-size:18px;font-weight:700;color:#059669;margin-bottom:6px;">訂單已送出！</div>
+      <div style="font-size:14px;color:#555;line-height:1.7;">
+        客戶：<strong>${customer}</strong><br>
+        送貨日期：<strong>${deliveryDate}</strong><br>
+        共 <strong>${itemCount}</strong> 項品項
+      </div>
+      ${editLink}
+      <div style="margin-top:8px;font-size:12px;color:#aaa;">LINE 分享視窗已開啟，如果沒有跳出請手動分享。</div>
+      <button onclick="document.getElementById('orderSuccessOverlay').remove()"
+        style="margin-top:18px;width:100%;background:#059669;color:white;border:none;border-radius:10px;padding:12px;font-size:15px;font-weight:700;cursor:pointer;">
+        確認，繼續
+      </button>
+    </div>`;
+  document.body.appendChild(overlay);
 }
 
 function submitToBackend(customer, orderDate, deliveryDate, items, callback) {
