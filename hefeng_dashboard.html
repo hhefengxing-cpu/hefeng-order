@@ -1079,13 +1079,30 @@ function getOrderPrice(orderIdx, itemName) {
   return '';
 }
 
-// 把批價存回 GAS 訂單紀錄（同時更新本地 currentOrders）
+// 把批價存回訂單紀錄（Firebase 優先，失敗才走 GAS）
 function savePrintPricesToOrder(orderIdx, priceMap, total) {
   var o = currentOrders[orderIdx];
   var priceData = {prices: priceMap, total: total, printedAt: new Date().toLocaleString('zh-TW')};
   // 先更新本地，讓卡片立即顯示
   currentOrders[orderIdx].printedPrices = priceData;
-  // 非同步存回 GAS（注意：不能加 Content-Type: application/json，否則觸發 CORS 預檢導致 POST 被封鎖）
+  // Firebase PATCH：只更新 printedPrices 欄位，不影響其他資料
+  if (useFirebase() && o.orderId) {
+    fetch(FIREBASE_URL + '/orders/' + o.orderId + '/printedPrices.json', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(priceData)
+    }).catch(function() {
+      // Firebase 失敗，退回 GAS
+      fetch(V2_GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({action: 'savePrintPrices', pwd: pwd, id: o.orderId, prices: priceMap, total: total})
+      }).then(function(r){ return r.json(); }).then(function(d){
+        if (d.error) alert('⚠️ 批價儲存失敗：' + d.error + '\n請截圖回報。');
+      }).catch(function(err){ alert('⚠️ 批價無法儲存到雲端：' + err + '\n請確認網路連線後再試。'); });
+    });
+    return;
+  }
+  // 沒有 Firebase，直接走 GAS
   fetch(V2_GAS_URL, {
     method: 'POST',
     body: JSON.stringify({action: 'savePrintPrices', pwd: pwd, id: o.orderId, prices: priceMap, total: total})
