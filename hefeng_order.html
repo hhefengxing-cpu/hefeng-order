@@ -509,6 +509,10 @@ const PRODUCTS = {
 const V2_GAS_URL = 'https://script.google.com/macros/s/AKfycbwWggz9BZjz3Y_sioE5wDr0WjNeQh0mTtIWbSJmbacPqWbsreDyt2E7kb8lJg7R_r0M/exec';
 const FRONTEND_VERSION = 'v1.1-合豐行-2026-09-10';
 
+// ★ Firebase Realtime Database URL（格式：https://xxx.firebaseio.com 或 https://xxx.asia-southeast1.firebasedatabase.app）
+// 從 Firebase Console → Realtime Database 頁面頂部複製
+const FIREBASE_URL = 'https://hefeng-orders-default-rtdb.asia-southeast1.firebasedatabase.app';
+
 const LS_CART     = 'hefeng_cart';
 const LS_CUSTOMER = 'hefeng_customer';
 const LS_HISTORY  = 'hefeng_history';
@@ -699,10 +703,14 @@ function askContinueOrNew(orderId, items, customer, delivery, onChoice, history)
 function cancelExistingOrder(orderId, customer, delivery) {
   if (!confirm('確定要取消今天（' + delivery + '）的訂單嗎？取消後無法復原，如果要重新下單要整個重填。')) return;
 
-  fetch(V2_GAS_URL + '?action=cancel&id=' + encodeURIComponent(orderId))
-    .then(r => r.json())
+  const useFirebase = FIREBASE_URL && FIREBASE_URL.indexOf('YOUR_FIREBASE') === -1;
+  const cancelPromise = useFirebase
+    ? cancelOrderInFirebase(orderId)
+    : fetch(V2_GAS_URL + '?action=cancel&id=' + encodeURIComponent(orderId)).then(r => r.json());
+
+  cancelPromise
     .then(result => {
-      if (result.error) { alert('取消失敗：' + result.error); return; }
+      if (result && result.error) { alert('取消失敗：' + result.error); return; }
       editingOrderId = null;
       unlockSendButtons();
       cart = {};
@@ -1088,21 +1096,21 @@ function openLine() {
   if (!customer) { alert('請先填入客戶名稱'); releaseLock(); return; }
   if (!items.length) { alert('購物車是空的，請先加入品項'); releaseLock(); return; }
 
-  // ★ 送出前防重複：最多等 4 秒，超時就直接送，不讓客戶乾等
-  if (!editingOrderId && V2_GAS_URL) {
-    const checkPromise = fetch(V2_GAS_URL + '?action=check&customer=' + encodeURIComponent(customer) + '&date=' + encodeURIComponent(deliveryDate))
-      .then(r => r.json());
-    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({_timeout: true}), 4000));
+  // ★ 送出前防重複：Firebase 版（快）或 GAS fallback（慢但有 4 秒 timeout）
+  if (!editingOrderId) {
+    const useFirebase = FIREBASE_URL && FIREBASE_URL.indexOf('YOUR_FIREBASE') === -1;
+    const checkPromise = useFirebase
+      ? checkDuplicateFirebase(customer, deliveryDate)
+      : fetch(V2_GAS_URL + '?action=check&customer=' + encodeURIComponent(customer) + '&date=' + encodeURIComponent(deliveryDate)).then(r => r.json());
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({_timeout: true}), useFirebase ? 3000 : 4000));
     Promise.race([checkPromise, timeoutPromise])
       .then(data => {
         if (!data._timeout && data.exists && data.editable) {
-          // 在 4 秒內確認有重複訂單，跳出確認視窗
           releaseLock();
           askContinueOrNew(data.orderId, data.items, customer, deliveryDate, (choice) => {
             if (choice === 'continue') openLine();
           }, data.history);
         } else {
-          // 無重複 or 超時 → 直接送出
           doSendLine(customer, orderDate, deliveryDate, items, btn, releaseLock);
         }
       })
@@ -1179,14 +1187,55 @@ function showOrderSuccessBanner(customer, deliveryDate, itemCount, orderId) {
 
 function submitToBackend(customer, orderDate, deliveryDate, items, callback) {
   const itemsData = items.map(([name, {qty, unit, note}]) => ({name, qty, unit, note: note||''}));
+  const orderData = {
+    customer, orderDate, deliveryDate,
+    items: itemsData,
+    createdAt: Date.now(),
+    status: 'pending',
+    synced: false   // GAS 排程同步後會改成 true
+  };
+
+  // ── Firebase 快速通道 ──────────────────────────────
+  const useFirebase = FIREBASE_URL && FIREBASE_URL.indexOf('YOUR_FIREBASE') === -1;
+  if (useFirebase) {
+    // 新訂單：POST 自動產生 ID；編輯：PUT 覆蓋既有
+    const url = editingOrderId
+      ? FIREBASE_URL + '/orders/' + editingOrderId + '.json'
+      : FIREBASE_URL + '/orders.json';
+    const method = editingOrderId ? 'PUT' : 'POST';
+    fetch(url, {
+      method,
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(orderData)
+    })
+    .then(r => r.json())
+    .then(result => {
+      // POST 回傳 {name: "-NxXXXX"}，PUT 回傳完整物件
+      const newId = result.name || editingOrderId || '';
+      saveHistory();
+      localStorage.setItem('lastOrder', JSON.stringify(cart));
+      if (callback) callback(newId);
+    })
+    .catch(() => {
+      // Firebase 失敗 → fallback 到 GAS（不讓客戶卡住）
+      console.warn('[HF] Firebase 失敗，改用 GAS');
+      submitViaGAS(customer, orderDate, deliveryDate, itemsData, callback);
+    });
+    return;
+  }
+
+  // ── 沒有 Firebase → 原本 GAS 路徑 ─────────────────
+  submitViaGAS(customer, orderDate, deliveryDate, itemsData, callback);
+}
+
+// GAS 送單（fallback 或尚未設定 Firebase 時使用）
+function submitViaGAS(customer, orderDate, deliveryDate, itemsData, callback) {
   fetch(V2_GAS_URL, {
     method: 'POST',
     body: JSON.stringify({
       action: 'save',
       id: editingOrderId || '',
-      customer: customer,
-      orderDate: orderDate,
-      deliveryDate: deliveryDate,
+      customer, orderDate, deliveryDate,
       items: itemsData
     })
   })
@@ -1199,7 +1248,6 @@ function submitToBackend(customer, orderDate, deliveryDate, items, callback) {
     if (callback) callback(result.id || '');
   })
   .catch(() => {
-    // 即使後端失敗，還是繼續傳LINE
     saveHistory();
     localStorage.setItem('lastOrder', JSON.stringify(cart));
     if (callback) callback('');
@@ -1508,6 +1556,36 @@ function confirmQuickOrder() {
   autoSave(); renderProducts(); updatePanel();
   close1('quickResultOverlay');
   showToast(`✅ 已加入 ${quickOrderParsed.length} 項！`);
+}
+
+// ── Firebase 工具函式 ──────────────────────────────────
+// 查詢特定客戶 + 送貨日期是否已有訂單（24小時內）
+function checkDuplicateFirebase(customer, deliveryDate) {
+  // 用 deliveryDate 索引查詢（需 Firebase rules 有 .indexOn: ["deliveryDate"]）
+  const url = FIREBASE_URL + '/orders.json?orderBy=%22deliveryDate%22&equalTo=%22' + encodeURIComponent(deliveryDate) + '%22';
+  return fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      if (!data) return {exists: false};
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24小時前
+      const match = Object.entries(data).find(([id, order]) =>
+        order.customer === customer &&
+        order.status !== 'cancelled' &&
+        (order.createdAt || 0) > cutoff
+      );
+      if (!match) return {exists: false};
+      const [orderId, order] = match;
+      return {exists: true, editable: true, orderId, items: order.items || [], history: []};
+    });
+}
+
+// Firebase 取消訂單（標記 status: 'cancelled'，不實際刪除）
+function cancelOrderInFirebase(orderId) {
+  return fetch(FIREBASE_URL + '/orders/' + orderId + '.json', {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: 'cancelled'})
+  }).then(r => r.json());
 }
 
 // ── 通用工具 ─────────────────────────────────────

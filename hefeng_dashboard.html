@@ -406,6 +406,22 @@
 const V2_GAS_URL = 'https://script.google.com/macros/s/AKfycbwWggz9BZjz3Y_sioE5wDr0WjNeQh0mTtIWbSJmbacPqWbsreDyt2E7kb8lJg7R_r0M/exec';
 const FRONTEND_VERSION = 'v2.18-合豐行-2026-09-18';
 
+// ★ Firebase Realtime Database URL（與 order.html 填同一個）
+const FIREBASE_URL = 'https://hefeng-orders-default-rtdb.asia-southeast1.firebasedatabase.app';
+
+// 時間戳轉台灣格式 MM/dd HH:mm
+function formatTs(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return (d.getMonth()+1).toString().padStart(2,'0') + '/' +
+    d.getDate().toString().padStart(2,'0') + ' ' +
+    d.getHours().toString().padStart(2,'0') + ':' +
+    d.getMinutes().toString().padStart(2,'0');
+}
+function useFirebase() {
+  return FIREBASE_URL && FIREBASE_URL.indexOf('YOUR_FIREBASE') === -1;
+}
+
 // ★ 預設品項（當 GAS 品項表尚未建立時使用）
 const DEFAULT_PRODUCTS = {
   '全部商品': [
@@ -513,6 +529,34 @@ function todayStr() {
 
 function loadDashboard(dateOverride) {
   const date = dateOverride || todayStr();
+
+  if (useFirebase()) {
+    // ── Firebase 快速讀取 ─────────────────────────────
+    const url = FIREBASE_URL + '/orders.json?orderBy=%22deliveryDate%22&equalTo=%22' + date + '%22';
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        if (!data) { renderOrders([], date); return; }
+        const orders = Object.entries(data).map(([id, o]) => ({
+          orderId:       id,
+          customer:      o.customer || '',
+          customerAlias: o.customerAlias || '',
+          deliveryDate:  o.deliveryDate || date,
+          items:         o.items || [],
+          status:        o.status || 'pending',
+          createdAt:     o.createdAtStr || formatTs(o.createdAt),
+          updatedAt:     o.updatedAtStr || formatTs(o.updatedAt || o.createdAt),
+          changeCount:   o.changeCount || 1,
+          logs:          o.logs || [],
+          printedPrices: o.printedPrices || null
+        }));
+        renderOrders(orders, date);
+      })
+      .catch(() => { showMsg('Firebase 連線失敗，請重新整理'); });
+    return;
+  }
+
+  // ── GAS fallback ─────────────────────────────────
   fetch(V2_GAS_URL + '?action=dashboard&date=' + encodeURIComponent(date) + '&pwd=' + encodeURIComponent(pwd))
     .then(r => r.json())
     .then(data => {
@@ -643,6 +687,17 @@ function deleteBatch() {
   if (!count) return;
   if (!confirm('確定要「永久刪除」選取的 ' + count + ' 筆訂單嗎？\n\n這跟「取消」不一樣，刪除後連紀錄都不會留下，無法復原，僅建議測試資料使用。')) return;
 
+  if (useFirebase()) {
+    const ids = Array.from(selectedIds);
+    Promise.all(ids.map(id =>
+      fetch(FIREBASE_URL + '/orders/' + id + '.json', { method: 'DELETE' })
+    )).then(() => {
+      clearSelection();
+      loadDashboard(document.getElementById('dateInput').value);
+    }).catch(() => alert('刪除失敗，請檢查網路後再試一次。'));
+    return;
+  }
+
   fetch(V2_GAS_URL, {
     method: 'POST',
     body: JSON.stringify({ action: 'deleteBatch', ids: Array.from(selectedIds), pwd: pwd })
@@ -657,6 +712,14 @@ function deleteBatch() {
 
 function deleteOrder(orderId, customer) {
   if (!confirm('確定要「永久刪除」' + customer + ' 這筆訂單（' + orderId + '）嗎？\n\n這跟「取消」不一樣，刪除後連紀錄都不會留下，無法復原，僅建議測試資料使用。')) return;
+
+  if (useFirebase()) {
+    fetch(FIREBASE_URL + '/orders/' + orderId + '.json', { method: 'DELETE' })
+      .then(() => loadDashboard(document.getElementById('dateInput').value))
+      .catch(() => alert('刪除失敗，請檢查網路後再試一次。'));
+    return;
+  }
+
   fetch(V2_GAS_URL + '?action=delete&id=' + encodeURIComponent(orderId) + '&pwd=' + encodeURIComponent(pwd))
     .then(r => r.json())
     .then(result => {
@@ -786,6 +849,40 @@ function saveEditOrder() {
   const alias = document.getElementById('editAlias').value.trim();
   const btn = document.querySelector('.edit-save');
   btn.disabled = true; btn.textContent = '儲存中...';
+
+  if (useFirebase()) {
+    const now = Date.now();
+    const updatedData = {
+      items:         editItems,
+      customerAlias: alias,
+      updatedAt:     now,
+      updatedAtStr:  formatTs(now),
+      changeCount:   (o.changeCount || 1) + 1,
+      logs: (o.logs || []).concat([{
+        time: new Date().toLocaleTimeString('zh-TW'),
+        type: 'edit',
+        detail: '儀表板編輯品項'
+      }]),
+      synced: false   // 觸發 GAS 同步到 Sheets
+    };
+    fetch(FIREBASE_URL + '/orders/' + o.orderId + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(updatedData)
+    })
+    .then(r => r.json())
+    .then(() => {
+      currentOrders[editOrderIdx].customerAlias = alias;
+      currentOrders[editOrderIdx].items = editItems;
+      closeEditOrder();
+      renderOrders(currentOrders, document.getElementById('dateInput') ? document.getElementById('dateInput').value : '');
+      showMsg('✅ 訂單已更新');
+    })
+    .catch(e => alert('網路錯誤：' + e.message))
+    .finally(() => { btn.disabled = false; btn.textContent = '💾 儲存'; });
+    return;
+  }
+
   fetch(V2_GAS_URL, {
     method: 'POST',
     body: JSON.stringify({action:'editOrder', id: o.orderId, customerAlias: alias, items: editItems, pwd: pwd||''})
@@ -793,7 +890,6 @@ function saveEditOrder() {
   .then(r => r.json())
   .then(data => {
     if (data.ok) {
-      // 更新本地資料
       currentOrders[editOrderIdx].customerAlias = alias;
       currentOrders[editOrderIdx].items = editItems;
       closeEditOrder();
