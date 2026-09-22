@@ -973,9 +973,9 @@ function openHistoryModal() {
       return `<tr id="hrow_${idx}" style="border-bottom:1px solid var(--green-pale)">
         <td style="padding:7px 8px;font-weight:500">${name}</td>
         <td style="padding:4px 6px;text-align:center">
-          <input type="number" min="0" placeholder="數量" id="hqty_${idx}"
-            style="width:60px;height:28px;border:1.5px solid var(--border);border-radius:6px;text-align:center;font-size:14px;font-weight:700;font-family:inherit;color:var(--green);outline:none"
-            onclick="this.select()">
+          <input type="text" inputmode="none" readonly placeholder="點擊" id="hqty_${idx}"
+            style="width:60px;height:28px;border:1.5px solid var(--border);border-radius:6px;text-align:center;font-size:14px;font-weight:700;font-family:inherit;color:var(--green);outline:none;cursor:pointer;caret-color:transparent;background:white"
+            onclick="(function(i,n){ openQtyModalCb(n, document.getElementById('hqty_'+i).value, function(v){ var el=document.getElementById('hqty_'+i); el.value=v&&parseFloat(v)>0?parseFloat(v):''; }); })(${idx},'${name.replace(/'/g,"\\'")}')">
         </td>
         <td style="padding:4px 6px;text-align:center">
           <select id="hunit_${idx}" style="font-size:12px;border:1.5px solid var(--green);border-radius:6px;padding:4px 6px;font-family:inherit;background:white;color:var(--green);font-weight:600;cursor:pointer;min-width:48px;">
@@ -1056,7 +1056,7 @@ function openOrderModal() {
       const unitSelect = units.length > 1
         ? `<select onchange="cart['${n}'].unit=this.value;autoSave();" style="font-size:12px;border:1.5px solid var(--green);border-radius:6px;padding:3px 6px;font-family:inherit;background:white;color:var(--green);font-weight:600;cursor:pointer;">${unitOptions}</select>`
         : `<span style="font-size:13px">${unit}</span>`;
-      const qtyInput = `<input type="number" value="${qty}" min="0" step="0.5" onchange="if(cart['${n}']){cart['${n}'].qty=parseFloat(this.value)||0;if(cart['${n}'].qty===0){delete cart['${n}'];}renderProducts();updatePanel();autoSave();openOrderModal();}" style="width:52px;border:1.5px solid var(--green);border-radius:6px;padding:3px 4px;font-size:13px;font-weight:600;text-align:center;font-family:inherit;color:var(--green);background:white;outline:none;" />`;
+      const qtyInput = `<input type="text" inputmode="none" readonly value="${qty}" placeholder="點擊" onclick="openQtyModalCb('${n.replace(/'/g,"\\'")}','${qty}',function(v){var q=parseFloat(v)||0;if(q===0){delete cart['${n.replace(/'/g,"\\'")}'];}else{cart['${n.replace(/'/g,"\\'")}'].qty=q;}renderProducts();updatePanel();autoSave();openOrderModal();})" style="width:52px;border:1.5px solid var(--green);border-radius:6px;padding:3px 4px;font-size:13px;font-weight:600;text-align:center;font-family:inherit;color:var(--green);background:white;outline:none;cursor:pointer;caret-color:transparent" />`;
       tr.innerHTML=`<td style="padding:6px 8px">${i+1}</td><td style="padding:6px 8px">${n}</td><td style="padding:6px 8px;text-align:center">${qtyInput}</td><td style="padding:6px 8px;text-align:center">${unitSelect}</td>`;
       tr.appendChild(tdNote);
       const tdDel=document.createElement('td');
@@ -1607,9 +1607,11 @@ function closeOverlay(id, event) {
 
 // ── 數量彈窗 ──────────────────────────────────────────
 let _qtyModalTarget = null;
+let _qtyModalCallback = null;
 
 function openQtyModal(name) {
   _qtyModalTarget = name;
+  _qtyModalCallback = null;
   const qty = cart[name] ? cart[name].qty : '';
   document.getElementById('qtyModalName').textContent = name;
   const input = document.getElementById('qtyModalInput');
@@ -1620,9 +1622,28 @@ function openQtyModal(name) {
   setTimeout(function() { input.focus(); input.select(); }, 50);
 }
 
+// 通用版：label 是顯示名稱，currentVal 是預填值，callback(val) 在確認時被呼叫
+function openQtyModalCb(label, currentVal, callback) {
+  _qtyModalTarget = null;
+  _qtyModalCallback = callback;
+  document.getElementById('qtyModalName').textContent = label;
+  const input = document.getElementById('qtyModalInput');
+  input.value = currentVal || '';
+  const overlay = document.getElementById('qtyModalOverlay');
+  overlay.style.display = 'flex';
+  overlay.classList.add('open');
+  setTimeout(function() { input.focus(); input.select(); }, 50);
+}
+
 function confirmQtyModal() {
-  if (!_qtyModalTarget) return;
   const val = document.getElementById('qtyModalInput').value;
+  if (_qtyModalCallback) {
+    _qtyModalCallback(val);
+    close1('qtyModalOverlay');
+    _qtyModalCallback = null;
+    return;
+  }
+  if (!_qtyModalTarget) return;
   setQty(_qtyModalTarget, val);
   close1('qtyModalOverlay');
   _qtyModalTarget = null;
@@ -1631,6 +1652,7 @@ function confirmQtyModal() {
 function cancelQtyModal() {
   close1('qtyModalOverlay');
   _qtyModalTarget = null;
+  _qtyModalCallback = null;
 }
 
 // Enter 確認，Escape 取消
