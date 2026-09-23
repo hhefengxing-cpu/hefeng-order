@@ -501,6 +501,16 @@ const PRODUCTS = {
     ['久黃',              ['件','斤','盒','把','包']],
     ['大豆苗',            ['件','斤','盒','把','包']],
     ['人參山藥',          ['件','斤','盒','把','包']],
+    ['秋葵',              ['件','斤','盒','把','包']],
+    ['菜瓜',              ['件','斤','盒','把','包']],
+    ['胡瓜',              ['件','斤','盒','把','包']],
+    ['玉米',              ['件','斤','盒','把','包']],
+    ['黃彩椒',            ['件','斤','盒','把','包']],
+    ['紅彩椒',            ['件','斤','盒','把','包']],
+    ['進口無頭蘿蔔',      ['件','斤','盒','把','包']],
+    ['台灣無頭蘿蔔',      ['件','斤','盒','把','包']],
+    ['進口大件西芹',      ['件','斤','盒','把','包']],
+    ['進口小件西芹',      ['件','斤','盒','把','包']],
   ],
 };
 // ══════════════════════════════════════════════════════════════
@@ -542,7 +552,7 @@ function init() {
   v.style.cssText = 'position:fixed;bottom:4px;right:6px;font-size:10px;color:#bbb;z-index:99999;';
   v.textContent = '前端 ' + FRONTEND_VERSION;
   document.body.appendChild(v);
-  fetch(V2_GAS_URL + '?action=ping').then(r=>r.json()).then(d=>{ v.textContent += ' ／ 後端 ' + (d.version||'未知'); }).catch(()=>{ v.textContent += ' ／ 後端連線失敗'; });
+  // GAS ping 已移除（避免每次載入喚醒 GAS）
 
   document.getElementById('orderDate').value = new Date().toISOString().split('T')[0];
   updateDeliveryDate();
@@ -580,9 +590,14 @@ function unlockSendButtons() {
 function checkOnPageOpen() {
   const customer = document.getElementById('customerName').value.trim();
   const delivery = document.getElementById('deliveryDate').value;
+  if (!customer || !delivery) { markSplashDataReady(); return; }
 
-  fetch(V2_GAS_URL + '?action=check&customer=' + encodeURIComponent(customer) + '&date=' + encodeURIComponent(delivery))
-    .then(r => r.json())
+  const useFirebase = FIREBASE_URL && FIREBASE_URL.indexOf('YOUR_FIREBASE') === -1;
+  const checkPromise = useFirebase
+    ? checkDuplicateFirebase(customer, delivery)
+    : fetch(V2_GAS_URL + '?action=check&customer=' + encodeURIComponent(customer) + '&date=' + encodeURIComponent(delivery)).then(r => r.json());
+
+  checkPromise
     .then(data => {
       if (customer && delivery && data.exists && data.editable) {
         lockSendButtonsForExistingOrder();
@@ -600,12 +615,49 @@ function checkOnPageOpen() {
 
 function loadOrderForEdit(id) {
   showV2Banner('loading', '正在載入您的訂單…');
+  // ★ 先渲染商品，不讓使用者等待訂單資料才看到畫面
+  renderProducts(); updatePanel(); updateQuickBtns();
+
+  const useFirebase = FIREBASE_URL && FIREBASE_URL.indexOf('YOUR_FIREBASE') === -1;
+  if (useFirebase) {
+    fetch(FIREBASE_URL + '/orders/' + id + '.json')
+      .then(r => r.json())
+      .then(data => {
+        if (!data || data.error) {
+          showV2Banner('error', '找不到這張訂單，連結可能已失效，請聯絡店家。');
+          markSplashDataReady();
+          return;
+        }
+        editingOrderId = id;
+        document.getElementById('customerName').value = data.customer || '';
+        if (data.deliveryDate) document.getElementById('deliveryDate').value = data.deliveryDate;
+        cart = {};
+        (data.items || []).forEach(it => { cart[it.name] = {qty: it.qty, unit: it.unit, note: it.note || ''}; });
+        renderProducts(); updatePanel(); updateQuickBtns();
+        if (data.status === 'cancelled') {
+          showV2Banner('error', '這張訂單已經被取消。');
+        } else {
+          showV2Banner('editing', '✏️ 正在編輯訂單，修改完成後按「送出」即可更新。');
+        }
+        const history = (data.logs || []).map(l => (l.time || '') + (l.detail ? ' ' + l.detail : ''));
+        showHistoryLine(history);
+        markSplashDataReady();
+      })
+      .catch(() => {
+        // Firebase 失敗，退回 GAS
+        _loadOrderForEditViaGAS(id);
+      });
+    return;
+  }
+  _loadOrderForEditViaGAS(id);
+}
+
+function _loadOrderForEditViaGAS(id) {
   fetch(V2_GAS_URL + '?action=order&id=' + encodeURIComponent(id))
     .then(r => r.json())
     .then(data => {
       if (data.error) {
         showV2Banner('error', '找不到這張訂單，連結可能已失效，請聯絡店家。');
-        renderProducts(); updatePanel(); updateQuickBtns();
         markSplashDataReady();
         return;
       }
@@ -615,7 +667,6 @@ function loadOrderForEdit(id) {
       cart = {};
       (data.items || []).forEach(it => { cart[it.name] = {qty: it.qty, unit: it.unit, note: it.note || ''}; });
       renderProducts(); updatePanel(); updateQuickBtns();
-
       if (data.status === 'cancelled') {
         showV2Banner('error', '這張訂單已經被取消。');
       } else if (!data.editable) {
@@ -655,8 +706,11 @@ function setupExistingOrderCheck() {
     const delivery = dateEl.value;
     if (!customer || !delivery || editingOrderId) return;
     unlockSendButtons();
-    fetch(V2_GAS_URL + '?action=check&customer=' + encodeURIComponent(customer) + '&date=' + encodeURIComponent(delivery))
-      .then(r => r.json())
+    const useFirebase = FIREBASE_URL && FIREBASE_URL.indexOf('YOUR_FIREBASE') === -1;
+    const checkPromise = useFirebase
+      ? checkDuplicateFirebase(customer, delivery)
+      : fetch(V2_GAS_URL + '?action=check&customer=' + encodeURIComponent(customer) + '&date=' + encodeURIComponent(delivery)).then(r => r.json());
+    checkPromise
       .then(data => {
         if (data.exists && data.editable) {
           lockSendButtonsForExistingOrder();
